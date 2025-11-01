@@ -76,26 +76,40 @@ export default function Home() {
     setLoading(true);
     setError(null);
     
-  // Fetch repositories from backend API
-  const fetchRepos = useCallback(async () => {
     try {
-      const response = await axios.post('/api/github/repos', {
-        accessToken: localStorage.getItem('github_token') || ''
-      });
-      setRepos(response.data.repos);
-      setFilteredRepos(response.data.repos);
+      // Sign in with GitHub using Firebase
+      const result = await signInWithPopup(auth, githubProvider);
+      
+      // Get the OAuth credential from the result
+      const credential = GithubAuthProvider.credentialFromResult(result);
+      const oauthToken = credential?.accessToken;
+      
+      if (oauthToken) {
+        // Store the OAuth token in localStorage
+        localStorage.setItem('github_token', oauthToken);
+        
+        // Get the user's GitHub profile
+        const user = result.user;
+        const token = await user.getIdToken();
+        
+        // Store user info in state
+        setUser({
+          login: user.providerData[0]?.uid || '',
+          avatar_url: user.photoURL || '',
+          html_url: `https://github.com/${user.providerData[0]?.uid || ''}`,
+          name: user.displayName || '',
+          email: user.email || ''
+        });
+      } else {
+        throw new Error('Failed to get OAuth token from GitHub');
+      }
     } catch (error) {
-      console.error('Error fetching repositories:', error);
+      console.error('GitHub login error:', error);
+      setError('Failed to sign in with GitHub');
+    } finally {
+      setLoading(false);
     }
   }, []);
-  
-  useEffect(() => {
-    if (user) {
-      fetchRepos();
-    }
-  }, [user, fetchRepos]);
-  
-  
 
   // Handle logout
   const handleLogout = useCallback(async () => {
