@@ -6,8 +6,11 @@ import { useState, useEffect, useCallback } from 'react';
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:4000';
 import { useParams, useRouter } from 'next/navigation';
 import axios from 'axios';
-import { File, Folder, ChevronRight, ChevronDown, Code, FileText, FileImage, Sparkles, Loader2 } from 'lucide-react';
+import { Code, File as FileIcon, FileText, FileImage, Sparkles, Loader2, ChevronRight, ChevronDown, Folder } from 'lucide-react';
 import CodeEditor from '@/components/CodeEditor';
+import IDELayout from '@/components/layout/IDELayout';
+import { FileNode } from '@/components/views/ExplorerView';
+import { EditorTab } from '@/components/layout/EditorTabs';
 
 interface RepositoryAnalysis {
   analysis: string;
@@ -248,7 +251,7 @@ export default function RepoPage() {
         setRepoContent([response.data]);
       }
     } catch (err) {
-      const error = err as Error & { response?: { data?: { message?: string } } };
+      const error = err as Error & { response?: { data?: { message?: string }; status?: number } };
       const errorMessage = error.response?.data?.message || error.message || 'Failed to load repository content';
       console.error('Error fetching repository content:', error);
       setError(`Error: ${errorMessage}`);
@@ -279,9 +282,9 @@ export default function RepoPage() {
 
       console.log(`Fetching content for file: ${file.path}`);
       
-      // First get the file details to check if it's a binary file
-      const detailsResponse = await axios.get(
-        `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(file.path)}`,
+      // Get the file content using GitHub API
+      const response = await axios.get(
+        `https://api.github.com/repos/${owner}/${repo}/contents/${file.path}`,
         {
           headers: {
             'Authorization': `token ${githubToken}`,
@@ -292,28 +295,21 @@ export default function RepoPage() {
         }
       );
 
-      // If it's a binary file or too large, show a message
-      if (detailsResponse.data.size > 1024 * 100) { // 100KB limit
-        setFileContent(`// File is too large to display (${(detailsResponse.data.size / 1024).toFixed(1)}KB)`);
+      // Check if file is too large
+      if (response.data.size > 1024 * 100) { // 100KB limit
+        setFileContent(`// File is too large to display (${(response.data.size / 1024).toFixed(1)}KB)`);
         setSelectedFile(file);
         return;
       }
 
-      // Get the raw content
-      const response = await axios.get(
-        `https://raw.githubusercontent.com/${owner}/${repo}/main/${encodeURIComponent(file.path)}`,
-        {
-          headers: {
-            'Authorization': `token ${githubToken}`,
-            'Accept': 'application/vnd.github.v3.raw',
-            'User-Agent': 'CodeMind.AI'
-          },
-          responseType: 'text',
-          timeout: 10000
-        }
-      );
-
-      setFileContent(response.data || '');
+      // Decode base64 content
+      if (response.data.content && response.data.encoding === 'base64') {
+        const decodedContent = atob(response.data.content.replace(/\n/g, ''));
+        setFileContent(decodedContent);
+      } else {
+        setFileContent('// Unable to decode file content');
+      }
+      
       setSelectedFile(file);
     } catch (err: any) {
       console.error('Error fetching file content:', err);
@@ -323,7 +319,7 @@ export default function RepoPage() {
     } finally {
       setIsLoadingFile(false);
     }
-  }, [owner, repo, router]);
+  }, [owner, repo]);
 
   const handleItemClick = useCallback((item: GitHubFile) => {
     if (item.type === 'dir') {
@@ -349,7 +345,7 @@ export default function RepoPage() {
     } else if (imageExtensions.includes(extension)) {
       return <FileImage className="w-4 h-4 text-green-400" />;
     } else {
-      return <File className="w-4 h-4 text-gray-400" />;
+      return <FileIcon className="w-4 h-4 text-gray-400" />;
     }
   };
 
@@ -357,123 +353,91 @@ export default function RepoPage() {
     fetchRepoContent('');
   }, [fetchRepoContent]);
 
-  return (
-    <div className="flex h-screen bg-gray-100">
-      {/* Sidebar */}
-      <div className="w-1/4 bg-white border-r border-gray-200 overflow-y-auto flex flex-col">
-        <div className="p-4 border-b">
-          <h1 className="text-xl font-bold mb-2">{repo}</h1>
-          <button
-            onClick={analyzeRepository}
-            disabled={isAnalyzing || isLoading}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isAnalyzing ? (
-              <>
-                <Loader2 className="animate-spin h-4 w-4" />
-                Analyzing...
-              </>
-            ) : (
-              <>
-                <Sparkles className="h-4 w-4" />
-                Analyze Repository
-              </>
-            )}
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto p-4">
-          {isLoading ? (
-            <div className="flex justify-center items-center h-20">
-              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
-            </div>
-          ) : (
-            <div className="space-y-1">
-              {repoContent.map((item) => (
-                <div key={item.sha} className="px-4 py-1 hover:bg-gray-200 cursor-pointer">
-                  <div 
-                    className="flex items-center space-x-1"
-                    onClick={() => handleItemClick(item)}
-                  >
-                    {item.type === 'dir' ? (
-                      <>
-                        {expandedDirs[item.path] ? (
-                          <ChevronDown className="w-4 h-4" />
-                        ) : (
-                          <ChevronRight className="w-4 h-4" />
-                        )}
-                        <Folder className="w-4 h-4 text-yellow-400" />
-                      </>
-                    ) : (
-                      <div className="w-4 h-4 flex items-center justify-center">
-                        {getFileIcon(item.name)}
-                      </div>
-                    )}
-                    <span className="ml-1 truncate">{item.name}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
+  // Convert GitHubFile[] to FileNode[] for the explorer
+  const convertToFileNodes = (githubFiles: GitHubFile[]): FileNode[] => {
+    return githubFiles.map(file => ({
+      id: file.sha,
+      name: file.name,
+      type: file.type === 'dir' ? 'dir' : 'file',
+      path: file.path,
+      isExpanded: expandedDirs[file.path] || false
+    }));
+  };
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {showAnalysis && analysis && (
-          <div className="bg-white rounded-lg shadow p-6 m-4 border border-gray-200 overflow-y-auto">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold">Repository Analysis</h2>
-              <button 
-                onClick={() => setShowAnalysis(false)}
-                className="text-gray-500 hover:text-gray-700 text-2xl"
-              >
-                ×
-              </button>
-            </div>
-            <div className="space-y-4">
-              <div className="flex items-center text-sm text-gray-600">
-                <span className="font-medium">{analysis.fileCount} files</span>
-                {analysis.languages.length > 0 && (
-                  <span className="ml-4">
-                    <span className="font-medium">Languages: </span>
-                    {analysis.languages.join(', ')}
-                  </span>
-                )}
-              </div>
-              <div className="prose max-w-none">
-                {analysis.analysis.split('\n').map((paragraph, i) => (
-                  <p key={i} className="mb-4">{paragraph}</p>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-        
-        <div className="flex-1 overflow-hidden">
-          {selectedFile ? (
-            <div className="h-full">
-              <CodeEditor
-                code={fileContent}
-                language={getLanguage(selectedFile.name)}
-                height="calc(100vh - 60px)"
-                onChange={(newContent) => setFileContent(newContent)}
-                readOnly={false}
-              />
-            </div>
-          ) : (
-            <div className="flex items-center justify-center h-full text-gray-500">
-              <div className="text-center p-8 max-w-md">
-                <Code className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                <h3 className="text-lg font-medium mb-2">No file selected</h3>
-                <p className="text-sm text-gray-400">
-                  Select a file from the sidebar to view its contents, or click "Analyze Repository" 
-                  to get a detailed analysis of this codebase.
-                </p>
-              </div>
-            </div>
-          )}
+  // Handle file/directory clicks from ExplorerView
+  const handleFileNodeClick = (node: FileNode) => {
+    const githubFile = repoContent.find(f => f.path === node.path);
+    if (githubFile) {
+      handleItemClick(githubFile);
+    }
+  };
+
+  const handleDirToggle = (path: string) => {
+    setExpandedDirs(prev => ({
+      ...prev,
+      [path]: !prev[path]
+    }));
+    const dir = repoContent.find(f => f.path === path);
+    if (dir && dir.type === 'dir') {
+      fetchRepoContent(path);
+    }
+  };
+
+  // Create editor tabs
+  const tabs: EditorTab[] = selectedFile ? [{
+    id: selectedFile.sha,
+    title: selectedFile.name,
+    path: selectedFile.path,
+    isDirty: false
+  }] : [];
+
+  return (
+    <IDELayout
+      files={convertToFileNodes(repoContent)}
+      expandedDirs={expandedDirs}
+      onFileClick={handleFileNodeClick}
+      onDirToggle={handleDirToggle}
+      selectedFile={selectedFile ? {
+        id: selectedFile.sha,
+        name: selectedFile.name,
+        type: selectedFile.type === 'dir' ? 'dir' : 'file',
+        path: selectedFile.path,
+        isExpanded: expandedDirs[selectedFile.path] || false
+      } : null}
+      tabs={tabs}
+      activeTabId={selectedFile?.sha || ''}
+      onTabClick={() => {}}
+      onTabClose={() => {
+        setSelectedFile(null);
+        setFileContent('');
+      }}
+      statusBarProps={{
+        language: selectedFile ? getLanguage(selectedFile.name) : 'plaintext',
+        branch: 'main',
+        aiStatus: isAnalyzing ? 'processing' : 'ready'
+      }}
+    >
+      {selectedFile ? (
+        <div className="h-full">
+          <CodeEditor
+            code={fileContent}
+            language={getLanguage(selectedFile.name)}
+            height="100%"
+            onChange={(newContent) => setFileContent(newContent)}
+            readOnly={false}
+          />
         </div>
-      </div>
-    </div>
+      ) : (
+        <div className="flex items-center justify-center h-full">
+          <div className="text-center p-8 max-w-md">
+            <Code className="w-16 h-16 mx-auto mb-4 text-[#858585]" />
+            <h3 className="text-lg font-medium mb-2 text-[#cccccc]">No file selected</h3>
+            <p className="text-sm text-[#858585]">
+              Select a file from the Explorer to view its contents, or use the AI Assistant to analyze your code.
+            </p>
+          </div>
+        </div>
+      )}
+    </IDELayout>
   );
 }

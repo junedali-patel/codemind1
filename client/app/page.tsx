@@ -8,9 +8,36 @@ import {
   GithubAuthProvider, 
   User as FirebaseUser 
 } from 'firebase/auth';
+import { 
+  Github, 
+  Code, 
+  GitBranch, 
+  Zap, 
+  BookOpen, 
+  Settings, 
+  ChevronRight,
+  Clock,
+  Star,
+  Search,
+  Plus,
+  FolderOpen,
+  FileText,
+  FileCode,
+  FileType2,
+  FileArchive,
+  FileImage,
+  FileJson,
+  FileVideo,
+  FileAudio,
+  FileCheck
+} from 'lucide-react';
+import { motion } from 'framer-motion';
 import { auth, githubProvider } from '../lib/firebase';
 import axios from 'axios';
-import CodeEditor from '../components/CodeEditor';
+import IDELayout from '../components/layout/IDELayout';
+import { FileNode } from '../components/views/ExplorerView';
+import { EditorTab } from '../components/layout/EditorTabs';
+import CodeEditor from '@/components/CodeEditor';
 
 interface GitHubUser {
   login: string;
@@ -436,17 +463,87 @@ export default function Home() {
     );
   };
 
-  return (
-    <div className="min-h-screen flex flex-col bg-[#0d1117] text-[#e6edf3] antialiased">
-      {renderHeader()}
-      <main className="flex-1">
-        <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          {renderMainContent()}
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#1e1e1e]">
+        <div className="max-w-md w-full space-y-8 text-center p-8">
+          <div>
+            <h1 className="text-4xl font-bold text-white mb-2">CodeMind.AI</h1>
+            <h2 className="mt-6 text-2xl font-semibold text-[#cccccc]">
+              AI-Powered Code Editor
+            </h2>
+            <p className="mt-4 text-sm text-[#858585]">
+              A VS Code-like IDE with integrated AI assistance for code analysis, debugging, and development.
+            </p>
+          </div>
+          <div>
+            <button
+              onClick={handleGitHubLogin}
+              className="w-full flex justify-center items-center gap-2 py-3 px-6 rounded-md text-sm font-medium text-white bg-[#007acc] hover:bg-[#005a9e] transition-colors"
+              disabled={loading}
+            >
+              {loading ? 'Signing in...' : '🚀 Sign in with GitHub'}
+            </button>
+          </div>
+          <p className="text-xs text-[#858585]">
+            Connect your GitHub account to browse and edit your repositories
+          </p>
         </div>
-      </main>
-      <footer className="py-4 text-center text-[#8b949e] text-sm border-t border-[#30363d]">
-        <p>CodeMind - A GitHub Repository Browser</p>
-      </footer>
-    </div>
+      </div>
+    );
+  }
+
+  // Convert repos to FileNode structure for the explorer
+  const convertReposToFileNodes = (): FileNode[] => {
+    return filteredRepos.map(repo => ({
+      id: repo.id.toString(),
+      name: repo.name,
+      type: 'file' as const,
+      path: repo.full_name,
+    }));
+  };
+
+  return (
+    <IDELayout
+      files={convertReposToFileNodes()}
+      expandedDirs={{}}
+      onFileClick={(node) => {
+        const repo = filteredRepos.find(r => r.full_name === node.path);
+        if (repo) handleRepoSelect(repo);
+      }}
+      onDirToggle={() => {}}
+      statusBarProps={{
+        branch: user?.login || 'main',
+        aiStatus: 'ready'
+      }}
+    >
+      <div className="h-full flex items-center justify-center bg-[#1e1e1e]">
+        <div className="text-center p-8 max-w-2xl">
+          <h1 className="text-3xl font-bold text-white mb-4">
+            Welcome to CodeMind.AI
+          </h1>
+          <p className="text-[#cccccc] mb-6">
+            Select a repository from the Explorer or use the AI Assistant to get started.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8">
+            <div className="bg-[#2d2d2d] p-4 rounded-lg">
+              <div className="text-2xl mb-2">📁</div>
+              <h3 className="text-white font-medium mb-1">File Explorer</h3>
+              <p className="text-sm text-[#858585]">Browse your repositories and files</p>
+            </div>
+            <div className="bg-[#2d2d2d] p-4 rounded-lg">
+              <div className="text-2xl mb-2">🤖</div>
+              <h3 className="text-white font-medium mb-1">AI Assistant</h3>
+              <p className="text-sm text-[#858585]">Get intelligent code suggestions</p>
+            </div>
+            <div className="bg-[#2d2d2d] p-4 rounded-lg">
+              <div className="text-2xl mb-2">⚡</div>
+              <h3 className="text-white font-medium mb-1">Code Editor</h3>
+              <p className="text-sm text-[#858585]">Powered by Monaco Editor</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </IDELayout>
   );
 }
