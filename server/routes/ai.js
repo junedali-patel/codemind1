@@ -450,4 +450,75 @@ router.post('/explain', async (req, res) => {
   }
 });
 
+// POST /api/ai/chat
+router.post('/chat', async (req, res) => {
+  const { message, conversationHistory } = req.body;
+
+  if (!message) {
+    console.error('No message provided in chat request');
+    return res.status(400).json({ error: 'No message provided' });
+  }
+
+  try {
+    console.log('Sending chat request to Ollama...');
+    
+    // Build messages array with conversation history
+    const messages = [
+      {
+        role: 'system',
+        content: 'You are an expert AI coding assistant integrated into a VS Code-like IDE. Help users with code analysis, debugging, refactoring, and general programming questions. Provide clear, concise, and actionable responses. Use code examples when relevant.'
+      }
+    ];
+
+    // Add conversation history if provided
+    if (conversationHistory && Array.isArray(conversationHistory)) {
+      messages.push(...conversationHistory.slice(-10)); // Keep last 10 messages for context
+    }
+
+    // Add current message
+    messages.push({
+      role: 'user',
+      content: message
+    });
+
+    const response = await Promise.race([
+      ollama.chat({
+        model: 'codellama:7b-instruct',
+        messages: messages,
+        options: {
+          temperature: 0.7,
+          top_p: 0.9,
+          num_predict: 500
+        }
+      }),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Request timed out after 30 seconds')), 30000)
+      )
+    ]);
+
+    console.log('Received chat response from Ollama');
+    const aiResponse = response.message?.content.trim() || 'I apologize, but I could not generate a response. Please try again.';
+    
+    res.json({ response: aiResponse });
+  } catch (error) {
+    console.error('Chat error:', error);
+    
+    // Provide a helpful fallback response
+    const fallbackResponses = {
+      'timeout': 'I apologize, but my response took too long. Could you please rephrase your question or break it into smaller parts?',
+      'connection': 'I\'m having trouble connecting to my AI service. Please ensure Ollama is running and try again.',
+      'default': 'I encountered an error processing your request. Please try again or rephrase your question.'
+    };
+    
+    const errorType = error.message.includes('timeout') ? 'timeout' :
+                      error.message.includes('connect') ? 'connection' : 'default';
+    
+    res.status(500).json({ 
+      error: 'Failed to generate chat response',
+      response: fallbackResponses[errorType],
+      details: error.message 
+    });
+  }
+});
+
 module.exports = router;

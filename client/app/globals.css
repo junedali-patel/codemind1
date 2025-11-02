@@ -1,6 +1,6 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss/preflight";
+/* Tailwind v4 removed the `components` layer. Keep utilities directive. */
+@import "tailwindcss/utilities";
 
 :root {
   --color-bg-canvas: #0d1117;
