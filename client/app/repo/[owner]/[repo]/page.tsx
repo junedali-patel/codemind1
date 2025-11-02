@@ -43,6 +43,7 @@ export default function RepoPage() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<RepositoryAnalysis | null>(null);
   const [error, setError] = useState('');
+  const [analysisStatus, setAnalysisStatus] = useState('');
   const [repoContent, setRepoContent] = useState<GitHubFile[]>([]);
   const [expandedDirs, setExpandedDirs] = useState<Record<string, boolean>>({});
   const [selectedFile, setSelectedFile] = useState<GitHubFile | null>(null);
@@ -70,79 +71,109 @@ export default function RepoPage() {
     }
   };
 
-  const analyzeRepository = async () => {
-    if (!repoContent.length) {
-      setError('No repository content available to analyze');
-      return;
-    }
-    
-    setIsAnalyzing(true);
-    setError('');
-    setShowAnalysis(true);
+  const analyzeRepository = useCallback(async () => {
+    if (!owner || !repo) return;
     
     try {
-      // Get GitHub token
+      setError('');
+      setIsAnalyzing(true);
+      setAnalysisStatus('Preparing repository analysis...');
+      
+      // Get GitHub token from localStorage
       const githubToken = localStorage.getItem('github_token');
       if (!githubToken) {
-        throw new Error('GitHub authentication required. Please sign in with GitHub.');
+        throw new Error('GitHub authentication token not found. Please sign in again.');
       }
 
-      // Select important files for analysis (limit to 5 files to avoid rate limits)
-      const importantFiles = repoContent
-        .filter(file => file.type === 'file' && 
-          (file.name.endsWith('.js') || 
-           file.name.endsWith('.ts') || 
-           file.name.endsWith('.py') ||
-           file.name.endsWith('.java') ||
-           file.name.endsWith('package.json') ||
-           file.name.endsWith('requirements.txt') ||
-           file.name.endsWith('README.md'))
+      setAnalysisStatus('Fetching repository structure...');
+      
+      // Define interface for GitHub file/directory entry
+      interface GitHubContentEntry {
+        name: string;
+        path: string;
+        size: number;
+        type: 'file' | 'dir';
+        url: string;
+        download_url: string | null;
+      }
+
+      // First, get the repository contents with a timeout
+      const contentsResponse = await Promise.race([
+        axios.get<GitHubContentEntry[]>(
+          `https://api.github.com/repos/${owner}/${repo}/contents`,
+          {
+            headers: {
+              'Accept': 'application/vnd.github.v3+json',
+              'Authorization': `Bearer ${githubToken}`
+            },
+            timeout: 30000 // 30 second timeout for initial fetch
+          }
+        ),
+        new Promise<never>((_, reject) => 
+          setTimeout(() => reject(new Error('Repository fetch timed out. The repository might be too large.')), 30000)
         )
-        .slice(0, 5);
+      ]) as { data: GitHubContentEntry[] };
+
+      if (!contentsResponse?.data || !Array.isArray(contentsResponse.data)) {
+        throw new Error('Failed to fetch repository contents');
+      }
+
+      // Filter out large files and non-code files
+      const importantFiles = contentsResponse.data.filter(
+        (file: any) => 
+          file.size < 50000 && // Less than 50KB (reduced from 100KB)
+          !file.name.match(/\.(jpg|jpeg|png|gif|svg|ico|pdf|zip|tar\.gz|DS_Store|gitignore|md|lock|log|bin|exe|dll|so|a|o|pyc|class|jar|war|ear|zip|tar|gz|7z|rar|ipynb)$/i) &&
+          !file.path.includes('node_modules/') &&
+          !file.path.includes('dist/') &&
+          !file.path.includes('build/') &&
+          !file.path.includes('vendor/')
+      ).slice(0, 30); // Limit to first 30 files to prevent timeouts
 
       if (importantFiles.length === 0) {
-        throw new Error('No supported files found for analysis');
+        throw new Error('No suitable files found for analysis. The repository might be empty or contain only non-code files.');
       }
+
+      setAnalysisStatus(`Analyzing ${importantFiles.length} files...`);
       
-      console.log(`Analyzing ${importantFiles.length} important files...`);
-      
-      // Process files in batches to avoid rate limiting
-      const BATCH_SIZE = 2;
-      const filesWithContent = [];
+      // Fetch content for each file (in smaller batches)
+      const BATCH_SIZE = 3;
+      const filesWithContent: any[] = [];
       
       for (let i = 0; i < importantFiles.length; i += BATCH_SIZE) {
         const batch = importantFiles.slice(i, i + BATCH_SIZE);
+        setAnalysisStatus(`Processing files ${i + 1}-${Math.min(i + BATCH_SIZE, importantFiles.length)} of ${importantFiles.length}...`);
+        
         const batchResults = await Promise.all(
-          batch.map(async (file) => {
+          batch.map(async (file: any) => {
             try {
-              const response = await axios.get(
-                `https://api.github.com/repos/${owner}/${repo}/contents/${file.path}`,
-                {
-                  headers: {
-                    'Authorization': `token ${githubToken}`,
-                    'Accept': 'application/vnd.github.v3.raw'
-                  },
-                  responseType: 'text',
-                  timeout: 10000 // 10 second timeout per file
-                }
-              );
-
+              const fileResponse = await axios.get<string>(file.url, {
+                headers: {
+                  'Accept': 'application/vnd.github.v3.raw',
+                  'Authorization': `Bearer ${githubToken}`
+                },
+                timeout: 20000, // 20 second timeout per file
+                responseType: 'text'
+              });
+              
               return {
                 path: file.path,
                 name: file.name,
-                content: response.data || '',
-                language: getFileExtension(file.name) || 'text',
-                size: file.size || 0
+                content: typeof fileResponse.data === 'string' ? fileResponse.data : JSON.stringify(fileResponse.data),
+                size: file.size,
+                type: file.type,
+                language: getLanguage(file.name)
               };
             } catch (error) {
-              console.error(`Error fetching ${file.path}:`, error);
+              const err = error as Error;
+              console.warn(`Skipping ${file.path}:`, err.message);
               return null;
             }
           })
         );
 
         // Filter out failed requests and add to results
-        filesWithContent.push(...batchResults.filter(Boolean));
+        const successfulFiles = batchResults.filter(Boolean);
+        filesWithContent.push(...successfulFiles);
         
         // Add a small delay between batches to avoid rate limiting
         if (i + BATCH_SIZE < importantFiles.length) {
@@ -155,57 +186,74 @@ export default function RepoPage() {
       }
 
       console.log(`Successfully fetched ${filesWithContent.length} files for analysis`);
+      setAnalysisStatus('Analyzing code... This may take a moment.');
       
-      // Send files to our backend for analysis
-      const response = await axios.post(
-        `${API_BASE_URL}/api/ai/analyze-repo`, 
-        {
-          files: filesWithContent,
-          owner,
-          repo
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${githubToken}`
-          },
-          timeout: 60000 // 60 second timeout for analysis
+      try {
+        // Send files to our backend for analysis with a timeout
+        const analysisResponse = await Promise.race([
+          axios.post(
+            `${API_BASE_URL}/api/ai/analyze-repo`, 
+            {
+              files: filesWithContent.slice(0, 20), // Limit to first 20 files
+              owner,
+              repo,
+              analyzeCode: true,
+              maxFileSize: 50000
+            },
+            {
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${githubToken}`
+              },
+              timeout: 120000 // 2 minute timeout for analysis
+            }
+          ),
+          new Promise((_, reject) => 
+            setTimeout(
+              () => reject(new Error('Analysis is taking too long. The repository might be too large.')), 
+              120000
+            )
+          )
+        ]) as { data: any };
+        
+        if (!analysisResponse?.data) {
+          throw new Error('No response data from analysis service');
         }
-      );
-      
-      if (!response.data) {
-        throw new Error('No response data from analysis service');
-      }
 
-      // Update UI with analysis results
-      setAnalysis({
-        analysis: response.data.analysis || 'No analysis available.',
-        fileCount: response.data.metadata?.totalFiles || filesWithContent.length,
-        languages: response.data.metadata?.languages || []
-      });
-      
-      console.log('Analysis completed successfully');
+        // Update UI with analysis results
+        setAnalysis({
+          analysis: analysisResponse.data.analysis || 'No analysis available.',
+          fileCount: analysisResponse.data.metadata?.totalFiles || filesWithContent.length,
+          languages: analysisResponse.data.metadata?.languages || []
+        });
+        
+        console.log('Analysis completed successfully');
+        setAnalysisStatus('Analysis completed!');
+      } catch (error) {
+        const analysisError = error as Error;
+        console.error('Analysis error:', analysisError);
+        throw new Error(`Analysis failed: ${analysisError.message || 'Unknown error during analysis'}`);
+      }
     } catch (err: any) {
       const errorMessage = err.response?.data?.message || 
                          err.response?.data?.error || 
                          err.message || 
                          'Failed to analyze repository';
       
-      console.error('Analysis failed:', errorMessage, err);
+      console.error('Repository analysis failed:', errorMessage);
       setError(`Analysis failed: ${errorMessage}`);
       
-      // Set a fallback analysis if available
-      if (err.response?.data?.fallbackAnalysis) {
-        setAnalysis({
-          analysis: err.response.data.fallbackAnalysis,
-          fileCount: 0,
-          languages: []
-        });
+      // Provide more specific guidance for common errors
+      if (errorMessage.includes('timeout') || errorMessage.includes('too large')) {
+        setError(prev => prev + ' Try analyzing a smaller repository or specific files.');
+      } else if (errorMessage.includes('rate limit')) {
+        setError(prev => prev + ' GitHub rate limit reached. Please wait a few minutes and try again.');
       }
     } finally {
       setIsAnalyzing(false);
+      setIsLoading(false);
     }
-  };
+  }, [owner, repo]);
 
   const fetchRepoContent = useCallback(async (path: string = '') => {
     if (!owner || !repo) return;
@@ -249,20 +297,17 @@ export default function RepoPage() {
       }
     } catch (err) {
       const error = err as Error & { response?: { data?: { message?: string } } };
-      const errorMessage = error.response?.data?.message || error.message || 'Failed to load repository content';
-      console.error('Error fetching repository content:', error);
+      const errorMessage = error.response?.data?.message || error.message || 'Unknown error';
       setError(`Error: ${errorMessage}`);
       
-      // If unauthorized, redirect to home
-      if (error.response?.status === 401) {
-        router.push('/');
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  }, [owner, repo]);
-
-  // Initial fetch
+      // Handle different types of errors
+      if (axios.isAxiosError(error)) {
+        if (error.response?.status === 404) {
+          setError('Repository not found or access denied');
+        } else if (error.response?.status === 401) {
+          setError('Authentication failed. Please sign in again.');
+          router.push('/');
+        }
   useEffect(() => {
     fetchRepoContent('');
   }, [fetchRepoContent]);

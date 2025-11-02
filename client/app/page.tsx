@@ -71,12 +71,15 @@ export default function Home() {
   const isAuthenticated = !!user;
   const repoCount = filteredRepos.length;
 
-  // Handle GitHub login
+  // Handle GitHub login with improved error handling and token management
   const handleGitHubLogin = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    
     try {
+      setLoading(true);
+      setError('');
+      
+      // Clear any existing token
+      localStorage.removeItem('github_token');
+      
       // Sign in with GitHub using Firebase
       const result = await signInWithPopup(auth, githubProvider);
       
@@ -84,28 +87,56 @@ export default function Home() {
       const credential = GithubAuthProvider.credentialFromResult(result);
       const oauthToken = credential?.accessToken;
       
-      if (oauthToken) {
-        // Store the OAuth token in localStorage
-        localStorage.setItem('github_token', oauthToken);
-        
-        // Get the user's GitHub profile
-        const user = result.user;
-        const token = await user.getIdToken();
+      if (!oauthToken) {
+        throw new Error('Failed to get OAuth token from GitHub');
+      }
+      
+      // Store the OAuth token in localStorage
+      localStorage.setItem('github_token', oauthToken);
+      
+      // Get the user's GitHub profile
+      const user = result.user;
+      const idToken = await user.getIdToken();
+      
+      // Verify the GitHub token is valid by making a test request
+      try {
+        const testResponse = await axios.get('https://api.github.com/user', {
+          headers: {
+            'Authorization': `Bearer ${oauthToken}`,
+            'Accept': 'application/vnd.github.v3+json'
+          }
+        });
         
         // Store user info in state
         setUser({
-          login: user.providerData[0]?.uid || '',
-          avatar_url: user.photoURL || '',
-          html_url: `https://github.com/${user.providerData[0]?.uid || ''}`,
-          name: user.displayName || '',
-          email: user.email || ''
+          login: testResponse.data.login || user.providerData[0]?.uid || '',
+          avatar_url: testResponse.data.avatar_url || user.photoURL || '',
+          html_url: testResponse.data.html_url || `https://github.com/${user.providerData[0]?.uid || ''}`,
+          name: testResponse.data.name || user.displayName || '',
+          email: testResponse.data.email || user.email || ''
         });
-      } else {
-        throw new Error('Failed to get OAuth token from GitHub');
+        
+        // Now fetch the repositories
+        await fetchUserRepos(oauthToken);
+        
+      } catch (tokenError) {
+        console.error('GitHub token validation failed:', tokenError);
+        // Clear the invalid token
+        localStorage.removeItem('github_token');
+        await signOut(auth);
+        throw new Error('Failed to validate GitHub token. Please try signing in again.');
       }
-    } catch (error) {
+      
+    } catch (error: any) {
       console.error('GitHub login error:', error);
-      setError('Failed to sign in with GitHub');
+      setError(error.message || 'Failed to sign in with GitHub. Please try again.');
+      // Ensure we're signed out if there was an error
+      try {
+        await signOut(auth);
+        localStorage.removeItem('github_token');
+      } catch (signOutError) {
+        console.error('Error during sign out:', signOutError);
+      }
     } finally {
       setLoading(false);
     }
@@ -127,23 +158,53 @@ export default function Home() {
     }
   }, []);
 
-  // Fetch user's repositories
+  // Fetch user's repositories with better error handling
   const fetchUserRepos = useCallback(async (token: string) => {
+    if (!token) {
+      console.error('No GitHub token available');
+      setError('GitHub authentication token is missing. Please sign in again.');
+      return;
+    }
+
     try {
       setFetchingRepos(true);
       const response = await axios.get('https://api.github.com/user/repos', {
-        headers: { 'Authorization': `token ${token}` },
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'X-GitHub-Api-Version': '2022-11-28'
+        },
         params: { 
           sort: 'updated',
           direction: 'desc',
-          per_page: 100 
+          per_page: 100,
+          page: 1
         }
       });
-      setRepos(response.data);
-      setFilteredRepos(response.data);
-    } catch (error) {
+      
+      if (response.status === 200) {
+        setRepos(response.data);
+        setFilteredRepos(response.data);
+        setError('');
+      } else {
+        throw new Error(`GitHub API returned status: ${response.status}`);
+      }
+    } catch (error: any) {
       console.error('Error fetching repositories:', error);
-      setError('Failed to fetch repositories');
+      
+      // Handle specific error cases
+      if (error.response) {
+        if (error.response.status === 401) {
+          // Token is invalid or expired
+          setError('Your GitHub session has expired. Please sign out and sign in again.');
+          // Clear the invalid token
+          localStorage.removeItem('github_token');
+        } else {
+          setError(`GitHub API error: ${error.response.data?.message || 'Unknown error'}`);
+        }
+      } else {
+        setError('Failed to fetch repositories. Please check your connection and try again.');
+      }
     } finally {
       setFetchingRepos(false);
     }
@@ -216,62 +277,73 @@ export default function Home() {
     }
   }, [searchQuery, repos]);
 
-  // Handle authentication state changes
+  // Handle authentication state changes with improved token validation
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
       if (firebaseUser) {
         try {
+          setLoading(true);
           // Get the stored GitHub OAuth token from localStorage
           const token = localStorage.getItem('github_token');
           
           if (!token) {
             console.log('No GitHub token found in localStorage, signing out...');
             await signOut(auth);
+            setError('GitHub authentication token not found. Please sign in again.');
             return;
           }
 
           try {
-            // Verify the token is valid by fetching user data
+            // Verify the token is valid by fetching user data with the new Bearer token format
             const userResponse = await axios.get('https://api.github.com/user', {
               headers: { 
                 'Accept': 'application/vnd.github.v3+json',
-                'Authorization': `token ${token}` 
+                'Authorization': `Bearer ${token}`,
+                'X-GitHub-Api-Version': '2022-11-28'
               }
             });
             
-            // Update user state with GitHub user data
-            setUser({
-              login: userResponse.data.login,
-              avatar_url: userResponse.data.avatar_url,
-              html_url: userResponse.data.html_url,
-              name: userResponse.data.name || firebaseUser.displayName || userResponse.data.login,
-              email: userResponse.data.email || firebaseUser.email || ''
-            });
+            if (userResponse.status === 200) {
+              // Update user state with GitHub user data
+              setUser({
+                login: userResponse.data.login,
+                avatar_url: userResponse.data.avatar_url,
+                html_url: userResponse.data.html_url,
+                name: userResponse.data.name || firebaseUser.displayName || userResponse.data.login,
+                email: userResponse.data.email || firebaseUser.email || ''
+              });
 
-            // Fetch user repositories after successful authentication
-            fetchUserRepos(token);
+              // Fetch user repositories after successful authentication
+              await fetchUserRepos(token);
+            } else {
+              throw new Error(`GitHub API returned status: ${userResponse.status}`);
+            }
           } catch (error) {
-            console.error('Error fetching GitHub user data:', error);
-            // If there's an error with the GitHub API, sign out to clear invalid token
+            console.error('Error validating GitHub token:', error);
+            // Clear invalid token and sign out
+            localStorage.removeItem('github_token');
             await signOut(auth);
+            setError('Your GitHub session has expired. Please sign in again.');
+            return;
           }
-          
-          // Fetch user's repositories
-          await fetchUserRepos(token);
         } catch (error) {
           console.error('Authentication error:', error);
-          // If there's an error with the token, sign out to clear invalid state
-          await signOut(auth);
+          // Clear any invalid state
           localStorage.removeItem('github_token');
+          await signOut(auth);
           setError('Failed to authenticate with GitHub. Please sign in again.');
+        } finally {
+          setLoading(false);
         }
       } else {
-        // User is signed out
+        // User is signed out - clear all state
         setUser(null);
         setRepos([]);
         setFilteredRepos([]);
         setSelectedRepo(null);
         setCodeContent('');
+        setError('');
+        // Don't clear the token here as it might be needed for other tabs/windows
       }
     });
 
