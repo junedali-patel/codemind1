@@ -1,75 +1,137 @@
 'use client';
 
-import { useState } from 'react';
-import { Terminal, AlertCircle, FileOutput, X } from 'lucide-react';
+import { ReactNode } from 'react';
+import { X, ChevronUp } from 'lucide-react';
 
 interface PanelProps {
-  height?: number;
   onClose?: () => void;
+  children?: ReactNode;
 }
 
-export default function Panel({ height = 200, onClose }: PanelProps) {
-  const [activeTab, setActiveTab] = useState<'terminal' | 'problems' | 'output'>('terminal');
-
-  const tabs = [
-    { id: 'terminal', label: 'Terminal', icon: Terminal },
-    { id: 'problems', label: 'Problems', icon: AlertCircle },
-    { id: 'output', label: 'Output', icon: FileOutput },
-  ];
-
+export default function Panel({ onClose = () => {} }: PanelProps) {
   return (
-    <div 
-      className="bg-[#1e1e1e] border-t border-[#2b2b2b] flex flex-col"
-      style={{ height: `${height}px` }}
-    >
-      <div className="h-9 flex items-center bg-[#1e1e1e] border-b border-[#2b2b2b]">
-        {tabs.map((tab) => {
-          const Icon = tab.icon;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`h-full px-4 flex items-center gap-2 text-xs border-b-2 transition-colors ${
-                activeTab === tab.id
-                  ? 'text-white border-[#007acc]'
-                  : 'text-[#969696] border-transparent hover:text-white'
-              }`}
-            >
-              <Icon size={14} />
-              {tab.label}
-            </button>
-          );
-        })}
-        <div className="flex-1" />
-        {onClose && (
-          <button
-            onClick={onClose}
-            className="h-full px-3 text-[#858585] hover:text-white"
-          >
+    <div className="h-48 bg-transparent border-t border-[#3e3e42]/50 flex flex-col shadow-2xl">
+
+      <style jsx>{`
+        .panel-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 12px 16px;
+          background: linear-gradient(to bottom, rgba(45, 45, 48, 0.9), rgba(37, 37, 38, 0.8));
+          backdrop-filter: blur(8px);
+          border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+          transition: all 0.2s ease;
+        }
+
+        .panel-header:hover {
+          background: linear-gradient(to bottom, rgba(50, 50, 54, 0.95), rgba(42, 42, 46, 0.9));
+        }
+
+        .panel-tabs {
+          display: flex;
+          gap: 2px;
+        }
+
+        .panel-tab {
+          padding: 6px 12px;
+          font-size: 12px;
+          background: transparent;
+          border: none;
+          color: #858585;
+          cursor: pointer;
+          border-radius: 4px 4px 0 0;
+          transition: all 0.2s ease;
+          font-weight: 500;
+        }
+
+        .panel-tab:hover {
+          background: rgba(255, 255, 255, 0.05);
+          color: #cccccc;
+        }
+
+        .panel-tab.active {
+          background: rgba(14, 165, 233, 0.15);
+          color: #0ea5e9;
+          border-bottom: 2px solid #0ea5e9;
+        }
+
+        .panel-buttons {
+          display: flex;
+          gap: 4px;
+        }
+
+        .panel-btn {
+          padding: 4px;
+          border-radius: 4px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          color: #858585;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: transparent;
+          border: none;
+        }
+
+        .panel-btn:hover {
+          background: rgba(255, 255, 255, 0.08);
+          color: #cccccc;
+          transform: scale(1.1);
+        }
+
+        .panel-btn:active {
+          transform: scale(0.95);
+        }
+
+        .panel-content {
+          flex: 1;
+          overflow-y: auto;
+          padding: 12px 16px;
+          font-size: 12px;
+        }
+
+        .panel-content::-webkit-scrollbar {
+          width: 8px;
+        }
+
+        .panel-content::-webkit-scrollbar-track {
+          background: rgba(30, 30, 30, 0.3);
+        }
+
+        .panel-content::-webkit-scrollbar-thumb {
+          background: rgba(128, 128, 128, 0.3);
+          border-radius: 4px;
+        }
+
+        .panel-content::-webkit-scrollbar-thumb:hover {
+          background: rgba(128, 128, 128, 0.5);
+        }
+      `}</style>
+
+      <div className="panel-header">
+        <div className="panel-tabs">
+          <button className="panel-tab active">Problems</button>
+          <button className="panel-tab">Output</button>
+          <button className="panel-tab">Debug Console</button>
+          <button className="panel-tab">Terminal</button>
+        </div>
+
+        <div className="panel-buttons">
+          <button className="panel-btn" aria-label="Minimize">
+            <ChevronUp size={16} />
+          </button>
+          <button className="panel-btn" onClick={onClose} aria-label="Close">
             <X size={16} />
           </button>
-        )}
+        </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-2 font-mono text-xs text-[#cccccc]">
-        {activeTab === 'terminal' && (
-          <div className="space-y-1">
-            <div className="text-green-400">$ npm run dev</div>
-            <div className="text-[#858585]">Ready on http://localhost:3000</div>
-            <div className="text-[#858585]">✓ Compiled successfully</div>
-          </div>
-        )}
-        {activeTab === 'problems' && (
-          <div className="text-[#858585]">
-            No problems detected in the workspace.
-          </div>
-        )}
-        {activeTab === 'output' && (
-          <div className="space-y-1 text-[#858585]">
-            <div>[Info] CodeMind AI Assistant initialized</div>
-            <div>[Info] Ready to assist with code analysis</div>
-          </div>
-        )}
+      <div className="panel-content">
+        <div className="text-[#858585] text-center py-6">
+          <p className="mb-2">No problems detected</p>
+          <p className="text-[11px] text-[#6d6d6d]">Linter: Ready</p>
+        </div>
       </div>
     </div>
   );

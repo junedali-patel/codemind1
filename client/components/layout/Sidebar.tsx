@@ -1,155 +1,110 @@
 'use client';
 
-import { ReactNode, useState, useEffect } from 'react';
-import { X, ChevronRight, ChevronDown, ChevronLeft, ChevronRight as ExpandIcon } from 'lucide-react';
+import { ReactNode } from 'react';
+import { X } from 'lucide-react';
 
 interface SidebarProps {
   title: string;
-  children: ReactNode;
   width?: number;
-  collapsedWidth?: number;
-  defaultCollapsed?: boolean;
   onClose?: () => void;
-  onCollapse?: (collapsed: boolean) => void;
+  children: ReactNode;
 }
 
-export default function Sidebar({ 
-  title, 
-  children, 
-  width = 300, 
-  collapsedWidth = 48,
-  defaultCollapsed = false,
-  onClose, 
-  onCollapse 
+export default function Sidebar({
+  title,
+  width = 250,
+  onClose = () => {},
+  children
 }: SidebarProps) {
-  const [collapsed, setCollapsed] = useState(defaultCollapsed);
-  const [isHovered, setIsHovered] = useState(false);
-  const [isResizing, setIsResizing] = useState(false);
-  const sidebarRef = useRef<HTMLDivElement>(null);
-  const startX = useRef(0);
-  const startWidth = useRef(width);
-
-  useEffect(() => {
-    if (onCollapse) {
-      onCollapse(collapsed);
-    }
-  }, [collapsed, onCollapse]);
-
-  const toggleCollapse = () => {
-    setCollapsed(!collapsed);
-  };
-
-  // Handle resizing
-  const startResize = (e: React.MouseEvent) => {
-    if (collapsed) return;
-    
-    setIsResizing(true);
-    startX.current = e.clientX;
-    startWidth.current = width;
-    
-    const handleMouseMove = (e: MouseEvent) => {
-      const newWidth = startWidth.current + (e.clientX - startX.current);
-      // Constrain width between 200px and 600px
-      const constrainedWidth = Math.min(Math.max(newWidth, 200), 600);
-      
-      // Update the width through state if needed, or directly manipulate DOM
-      if (sidebarRef.current) {
-        sidebarRef.current.style.width = `${constrainedWidth}px`;
-      }
-    };
-    
-    const handleMouseUp = () => {
-      setIsResizing(false);
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-    
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp, { once: true });
-  };
-
-  const currentWidth = collapsed ? collapsedWidth : width;
-  const collapseIcon = collapsed ? (
-    <ChevronRight className="opacity-50 group-hover:opacity-100" size={16} />
-  ) : (
-    <ChevronLeft className="opacity-50 group-hover:opacity-100" size={16} />
-  );
-
   return (
-    <div 
-      ref={sidebarRef}
-      className={`relative h-full flex flex-col transition-all duration-300 ease-in-out bg-[#1e1e1e] border-r border-[#2b2b2b]`}
-      style={{ 
-        width: `${currentWidth}px`,
-        minWidth: `${collapsed ? collapsedWidth : 200}px`,
-      }}
+    <div
+      className="flex flex-col h-full bg-[#252526] border-r border-[#3e3e42]/50 shadow-lg"
+      style={{ width: `${width}px` }}
     >
-      {/* Header */}
-      <div 
-        className="h-9 px-3 flex items-center justify-between bg-[#1e1e1e] border-b border-[#2b2b2b]"
-        onDoubleClick={toggleCollapse}
-      >
-        {!collapsed && (
-          <span className="text-xs font-medium text-[#cccccc] uppercase tracking-wider truncate">
-            {title}
-          </span>
-        )}
-        <div className="flex items-center">
-          {!collapsed && onClose && (
-            <button
-              onClick={onClose}
-              className="text-[#858585] hover:text-white p-1 -mr-1"
-              aria-label="Close sidebar"
-            >
-              <X size={16} />
-            </button>
-          )}
-          <button
-            onClick={toggleCollapse}
-            className={`text-[#858585] hover:text-white p-1 group`}
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            {collapseIcon}
-          </button>
-        </div>
+      <style jsx>{`
+        .sidebar-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 12px 16px;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+          background: linear-gradient(to bottom, rgba(45, 45, 48, 0.8), rgba(37, 37, 38, 0.8));
+          backdrop-filter: blur(8px);
+          transition: all 0.2s ease;
+        }
+
+        .sidebar-header:hover {
+          background: linear-gradient(to bottom, rgba(50, 50, 54, 0.9), rgba(42, 42, 46, 0.9));
+        }
+
+        .sidebar-title {
+          font-weight: 600;
+          font-size: 13px;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          color: #cccccc;
+          transition: color 0.2s ease;
+        }
+
+        .close-btn {
+          padding: 4px;
+          border-radius: 4px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          color: #858585;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .close-btn:hover {
+          background: rgba(255, 255, 255, 0.08);
+          color: #cccccc;
+          transform: scale(1.1);
+        }
+
+        .close-btn:active {
+          transform: scale(0.95);
+        }
+
+        .sidebar-content {
+          flex: 1;
+          overflow-y: auto;
+          overflow-x: hidden;
+        }
+
+        .sidebar-content::-webkit-scrollbar {
+          width: 8px;
+        }
+
+        .sidebar-content::-webkit-scrollbar-track {
+          background: transparent;
+        }
+
+        .sidebar-content::-webkit-scrollbar-thumb {
+          background: rgba(128, 128, 128, 0.3);
+          border-radius: 4px;
+        }
+
+        .sidebar-content::-webkit-scrollbar-thumb:hover {
+          background: rgba(128, 128, 128, 0.5);
+        }
+      `}</style>
+
+      <div className="sidebar-header">
+        <h2 className="sidebar-title">{title}</h2>
+        <button
+          onClick={onClose}
+          className="close-btn"
+          aria-label="Close sidebar"
+        >
+          <X size={16} />
+        </button>
       </div>
-      
-      {/* Content */}
-      <div 
-        className={`flex-1 overflow-y-auto transition-opacity duration-200 ${
-          collapsed ? 'opacity-0 pointer-events-none' : 'opacity-100'
-        }`}
-      >
+
+      <div className="sidebar-content">
         {children}
       </div>
-      
-      {/* Resize handle */}
-      {!collapsed && (
-        <div 
-          className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors z-10"
-          onMouseDown={startResize}
-          onMouseEnter={() => document.body.style.cursor = 'col-resize'}
-          onMouseLeave={() => !isResizing && (document.body.style.cursor = '')}
-        />
-      )}
-      
-      {/* Collapsed state indicator */}
-      {collapsed && (
-        <div 
-          className="absolute inset-0 flex items-center justify-center cursor-pointer hover:bg-[#2d2d2d] transition-colors"
-          onClick={toggleCollapse}
-          onMouseEnter={() => setIsHovered(true)}
-          onMouseLeave={() => setIsHovered(false)}
-          title="Expand sidebar"
-        >
-          <div className="transform -rotate-90 whitespace-nowrap text-xs font-medium text-[#858585] hover:text-white transition-colors">
-            {isHovered ? title : <ChevronRight size={16} />}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
-
-// Add useRef import at the top
-import { useRef } from 'react';

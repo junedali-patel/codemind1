@@ -1,72 +1,79 @@
 'use client';
 
-import { useState } from 'react';
-import { Search, FileText } from 'lucide-react';
+import { Search } from 'lucide-react';
 
 export default function SearchView() {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [replaceQuery, setReplaceQuery] = useState('');
-
   return (
-    <div className="p-3 space-y-4">
-      <div className="space-y-2">
-        <input
-          type="text"
-          placeholder="Search"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full bg-[#2d2d2d] text-[#cccccc] text-sm rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-[#007acc] placeholder-[#858585]"
-        />
-        <input
-          type="text"
-          placeholder="Replace"
-          value={replaceQuery}
-          onChange={(e) => setReplaceQuery(e.target.value)}
-          className="w-full bg-[#2d2d2d] text-[#cccccc] text-sm rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-[#007acc] placeholder-[#858585]"
-        />
-      </div>
+    <div className="h-full flex flex-col bg-[#252526]">
+      <style jsx>{`
+        .search-input-container {
+          padding: 12px;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+          background: linear-gradient(to bottom, rgba(45, 45, 48, 0.8), rgba(37, 37, 38, 0.6));
+        }
 
-      <div className="space-y-2">
-        <label className="flex items-center gap-2 text-sm text-[#cccccc] cursor-pointer">
-          <input type="checkbox" className="rounded" />
-          Match Case
-        </label>
-        <label className="flex items-center gap-2 text-sm text-[#cccccc] cursor-pointer">
-          <input type="checkbox" className="rounded" />
-          Match Whole Word
-        </label>
-        <label className="flex items-center gap-2 text-sm text-[#cccccc] cursor-pointer">
-          <input type="checkbox" className="rounded" />
-          Use Regular Expression
-        </label>
-      </div>
+        .search-input {
+          width: 100%;
+          padding: 8px 12px;
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 4px;
+          color: #cccccc;
+          font-size: 12px;
+          transition: all 0.2s ease;
+        }
 
-      <div className="pt-4 border-t border-[#2b2b2b]">
-        <div className="text-xs text-[#858585] mb-2">FILES TO INCLUDE</div>
-        <input
-          type="text"
-          placeholder="e.g., *.js, src/**"
-          className="w-full bg-[#2d2d2d] text-[#cccccc] text-sm rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-[#007acc] placeholder-[#858585]"
-        />
-      </div>
+        .search-input:focus {
+          outline: none;
+          background: rgba(255, 255, 255, 0.08);
+          border-color: #0ea5e9;
+          box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.2);
+        }
 
-      <div className="pt-4 border-t border-[#2b2b2b]">
-        <div className="text-xs text-[#858585] mb-2">FILES TO EXCLUDE</div>
-        <input
-          type="text"
-          placeholder="e.g., node_modules, dist"
-          className="w-full bg-[#2d2d2d] text-[#cccccc] text-sm rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-[#007acc] placeholder-[#858585]"
-        />
-      </div>
+        .search-input::placeholder {
+          color: #858585;
+        }
 
-      {searchQuery && (
-        <div className="pt-4 border-t border-[#2b2b2b] text-sm text-[#858585]">
-          <div className="flex items-center gap-2 mb-2">
-            <Search size={14} />
-            <span>Search results will appear here</span>
-          </div>
+        .search-content {
+          flex: 1;
+          overflow-y: auto;
+          padding: 16px;
+        }
+
+        .empty-state {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          height: 100%;
+          gap: 12px;
+          color: #858585;
+        }
+
+        .empty-icon {
+          opacity: 0.3;
+        }
+      `}</style>
+
+      <div className="search-input-container">
+        <div className="flex items-center gap-2 relative">
+          <Search size={16} className="text-[#858585] absolute left-3" />
+          <input
+            type="text"
+            placeholder="Search files..."
+            className="search-input pl-8"
+          />
         </div>
-      )}
+      </div>
+
+      <div className="search-content">
+        <div className="empty-state">
+          <Search size={40} className="empty-icon" />
+          <p className="text-center text-[13px]">
+            Enter a search term to find files
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
