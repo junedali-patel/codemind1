@@ -138,85 +138,84 @@ export default function HomePage() {
   // Not authenticated - show login screen
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[#0d1117] via-[#1a1a2e] to-[#16213e] flex flex-col items-center justify-center p-4 relative overflow-hidden">
+      <div className="min-h-[100dvh] bg-gradient-to-br from-[#0d1117] via-[#1a1a2e] to-[#16213e] flex flex-col items-center justify-center p-4 relative overflow-hidden">
         {/* Animated background orbs */}
-        <div className="absolute top-0 left-0 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl animate-pulse" style={{ animation: 'pulse 8s ease-in-out infinite' }} />
-        <div className="absolute bottom-0 right-0 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl animate-pulse" style={{ animation: 'pulse 8s ease-in-out 2s infinite' }} />
+        <div className="absolute top-0 left-0 w-[40vw] h-[40vw] max-w-[400px] max-h-[400px] bg-blue-500/10 rounded-full blur-3xl animate-pulse" style={{ animation: 'pulse 8s ease-in-out infinite' }} />
+        <div className="absolute bottom-0 right-0 w-[40vw] h-[40vw] max-w-[400px] max-h-[400px] bg-purple-500/10 rounded-full blur-3xl animate-pulse" style={{ animation: 'pulse 8s ease-in-out 2s infinite' }} />
 
-        <div className="relative z-10 max-w-md w-full">
+        <div className="relative z-10 w-full max-w-[400px] min-h-[490px] bg-[#161b22]/80 backdrop-blur-xl border border-[#30363d] p-8 rounded-3xl shadow-2xl flex flex-col items-center justify-center gap-8">
+          {/* Added 'flex flex-col items-center' to the parent wrapper to force everything to center */}
           {/* Logo Section */}
-          <div className="text-center mb-8">
-            <div className="flex items-center justify-center gap-3 mb-4">
-              <div className="p-3 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg">
-                <Brain className="w-8 h-8 text-white" />
+          <div className="text-center">
+            <div className="flex items-center justify-center gap-3 mb-6">
+              <div className="p-3 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl shadow-lg shadow-blue-500/20">
+                <Brain className="w-10 h-10 text-white" />
               </div>
-              <h1 className="text-4xl font-bold text-[#f0f6fc]">CodeMind.AI</h1>
             </div>
-            <p className="text-[#7d8590] text-sm leading-relaxed">
-              A VS Code-like IDE with integrated AI assistance for code analysis, debugging, and development.
+            <h1 className="text-3xl font-bold text-[#f0f6fc] mb-3">CodeMind.AI</h1>
+            <p className="text-[#7d8590] text-sm leading-relaxed px-4">
+              Your Intelligent Cloud IDE with integrated AI assistance.
             </p>
+          </div>
+
+          <div className="w-full flex justify-center">
+            <button
+              onClick={handleGitHubLogin}
+              disabled={isSigningIn}
+              className="w-auto px-8 bg-gradient-to-r from-[#2f81f7] to-[#1f6feb] hover:from-[#1f6feb] hover:to-[#0d47a1] disabled:from-gray-600 disabled:to-gray-500 text-white font-semibold py-3 rounded-[6px] flex items-center justify-center gap-2 transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98] shadow-lg hover:shadow-blue-500/25 text-sm"
+            >
+              {isSigningIn ? (
+                <>
+                  <Loader className="w-4 h-4 animate-spin" />
+                  <span>Signing in...</span>
+                </>
+              ) : (
+                <>
+                  <Github size={18} />
+                  <span>Sign in with GitHub</span>
+                </>
+              )}
+            </button>
           </div>
 
           {/* Error Message */}
           {error && (
-            <div className="mb-6 p-4 bg-red-500/10 border border-red-500/50 rounded-lg text-red-300 text-sm">
+            <div className="w-full p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-300 text-xs text-center">
               {error}
             </div>
           )}
 
-          {/* Sign In Button */}
-          <button
-            onClick={handleGitHubLogin}
-            disabled={isSigningIn}
-            className="w-full bg-gradient-to-r from-[#2f81f7] to-[#1f6feb] hover:from-[#1f6feb] hover:to-[#0d47a1] disabled:from-gray-600 disabled:to-gray-500 text-white font-semibold py-3 px-6 rounded-lg flex items-center justify-center gap-2 transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg"
-          >
-            {isSigningIn ? (
-              <>
-                <Loader className="w-5 h-5 animate-spin" />
-                Signing in...
-              </>
-            ) : (
-              <>
-                <Github size={20} />
-                Sign in with GitHub
-              </>
-            )}
-          </button>
-
           {/* Features Grid */}
-          <div className="mt-12 space-y-3">
-            <div className="flex items-start gap-4 p-4 rounded-lg bg-[#161b22]/50 backdrop-blur-sm border border-[#30363d]/50 hover:border-[#2f81f7]/50 transition-all">
-              <div className="p-2 bg-blue-500/20 rounded-lg flex-shrink-0">
-                <Code className="w-5 h-5 text-[#2f81f7]" />
+          <div className="w-full h-px bg-[#30363d]/50" />
+
+          {/* Features List - Vertically Aligned */}
+          <div className="w-full space-y-6">
+            <div className="flex flex-col items-center text-center group">
+              <div className="mb-2 text-[#2f81f7] group-hover:scale-110 transition-transform duration-300">
+                <Code className="w-6 h-6" />
               </div>
-              <div>
-                <h3 className="text-sm font-semibold text-[#f0f6fc]">Browse & Edit</h3>
-                <p className="text-xs text-[#7d8590] mt-1">Explore repositories with intuitive file tree navigation</p>
-              </div>
+              <h3 className="text-sm font-semibold text-[#e6edf3]">Browse & Edit</h3>
+              <p className="text-xs text-[#7d8590] mt-1">Intuitive file tree navigation</p>
             </div>
 
-            <div className="flex items-start gap-4 p-4 rounded-lg bg-[#161b22]/50 backdrop-blur-sm border border-[#30363d]/50 hover:border-purple-500/50 transition-all">
-              <div className="p-2 bg-purple-500/20 rounded-lg flex-shrink-0">
-                <Brain className="w-5 h-5 text-purple-400" />
+           <div className="flex flex-col items-center text-center group">
+              <div className="mb-2 text-purple-400 group-hover:scale-110 transition-transform duration-300">
+                <Brain className="w-6 h-6" />
               </div>
-              <div>
-                <h3 className="text-sm font-semibold text-[#f0f6fc]">AI Analysis</h3>
-                <p className="text-xs text-[#7d8590] mt-1">Real-time Ollama-powered code analysis and insights</p>
-              </div>
+              <h3 className="text-sm font-semibold text-[#e6edf3]">AI Analysis</h3>
+              <p className="text-xs text-[#7d8590] mt-1">Ollama-powered insights</p>
             </div>
 
-            <div className="flex items-start gap-4 p-4 rounded-lg bg-[#161b22]/50 backdrop-blur-sm border border-[#30363d]/50 hover:border-green-500/50 transition-all">
-              <div className="p-2 bg-green-500/20 rounded-lg flex-shrink-0">
-                <Zap className="w-5 h-5 text-green-400" />
+            <div className="flex flex-col items-center text-center group">
+              <div className="mb-2 text-green-400 group-hover:scale-110 transition-transform duration-300">
+                <Zap className="w-6 h-6" />
               </div>
-              <div>
-                <h3 className="text-sm font-semibold text-[#f0f6fc]">Monaco Editor</h3>
-                <p className="text-xs text-[#7d8590] mt-1">Professional code editing with syntax highlighting</p>
-              </div>
+              <h3 className="text-sm font-semibold text-[#e6edf3]">Monaco Editor</h3>
+              <p className="text-xs text-[#7d8590] mt-1">Pro syntax highlighting</p>
             </div>
           </div>
+          </div>
         </div>
-      </div>
     );
   }
 

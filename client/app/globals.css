@@ -1151,3 +1151,14 @@ select:disabled {
     transform: translateZ(0); /* Enable hardware acceleration */
   }
 }
+
+@media (min-width: 1536px) { /* 2xl screens */
+  html {
+    font-size: 16px; /* Increase from 14px default for very large monitors */
+  }
+}
+
+.monaco-editor-container {
+  height: 100% !important;
+  width: 100% !important;
+}

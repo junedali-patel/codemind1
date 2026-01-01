@@ -142,7 +142,7 @@ export default function IDELayout({
         )}
 
         {/* CENTER AREA */}
-        <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex-1 flex flex-col overflow-hidden min-w-0"> {/* min-w-0 fixes flex child overflow issues */}
 
           {/* Editor Tabs */}
           {tabs.length > 0 && (
@@ -155,7 +155,7 @@ export default function IDELayout({
           )}
 
           {/* Editor */}
-          <div className="flex-1 overflow-hidden">
+          <div className="flex-1 overflow-hidden relative">
             {children}
           </div>
 
@@ -196,7 +196,7 @@ export default function IDELayout({
 
         {/* RIGHT SIDE AI CHAT PANEL */}
         {showAI && (
-          <div className="w-[340px] h-full border-l border-[#333] bg-[#252526] flex-shrink-0 overflow-hidden">
+          <div className="w-80 lg:w-96 h-full border-l border-[#333] bg-[#252526] flex-shrink-0 overflow-hidden transition-all duration-300">
             <div className="flex items-center justify-between px-3 py-2 border-b border-[#333] bg-[#bd0b0b]">
               <span className="text-sm font-semibold text-[#e6edf3]">
                 AI Assistant
