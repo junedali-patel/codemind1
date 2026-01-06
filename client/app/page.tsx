@@ -56,7 +56,7 @@ export default function HomePage() {
       setIsLoading(true);
       setError('');
       console.log('[Repos] Fetching user repositories...');
-      
+
       const response = await fetch('https://api.github.com/user/repos?sort=updated&per_page=30', {
         headers: {
           'Authorization': `token ${token}`,
@@ -73,7 +73,7 @@ export default function HomePage() {
         }
         throw new Error('Failed to fetch repos');
       }
-      
+
       const data = await response.json();
       console.log(`[Repos] Successfully fetched ${data.length} repositories`);
       setRepos(data);
@@ -198,7 +198,7 @@ export default function HomePage() {
               <p className="text-xs text-[#7d8590] mt-1">Intuitive file tree navigation</p>
             </div>
 
-           <div className="flex flex-col items-center text-center group">
+            <div className="flex flex-col items-center text-center group">
               <div className="mb-2 text-purple-400 group-hover:scale-110 transition-transform duration-300">
                 <Brain className="w-6 h-6" />
               </div>
@@ -214,128 +214,140 @@ export default function HomePage() {
               <p className="text-xs text-[#7d8590] mt-1">Pro syntax highlighting</p>
             </div>
           </div>
-          </div>
         </div>
+      </div>
     );
   }
 
   // Authenticated - show repositories
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0d1117] to-[#161b22] p-6 lg:p-8">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-12">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg">
-              <Brain className="w-6 h-6 text-white" />
+    <div className="h-screen bg-[#0d1117] flex flex-col overflow-hidden">
+      {/* NEW NAVBAR: Aligns Logo, Search, and Sign Out */}
+      <nav className="sticky top-0 z-50 w-full border-b border-[#30363d] bg-[#161b22]/95 backdrop-blur-md">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="flex h-14 items-center justify-between gap-6">
+            {/* LEFT: Logo & Name */}
+            <div className="flex items-center gap-2 pl-1 flex-shrink-0">
+              <div className="p-1.5 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg shadow-lg shadow-blue-500/20">
+                <Brain className="w-5 h-5 text-white" />
+              </div>
+              <span className="text-lg font-bold text-[#f0f6fc] tracking-tight">CodeMind.AI</span>
             </div>
-            <div>
-              <h1 className="text-3xl font-bold text-[#f0f6fc]">CodeMind.AI</h1>
-              <p className="text-[#7d8590] text-sm">Your Repositories</p>
+
+            {/* CENTER: Search Bar (Moved here for alignment) */}
+            <div className="w-full max-w-sm mx-6">
+              <div className="relative group">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#7d8590] pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Search repositories"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full h-9 pl-12 pr-4 bg-[#0d1117] border border-[#30363d] rounded-full 
+             text-sm text-[#e6edf3] placeholder-[#7d8590]
+             focus:border-[#2f81f7] focus:outline-none focus:ring-1 focus:ring-[#2f81f7]
+             transition-all"
+                />
+              </div>
             </div>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="px-4 py-2 bg-red-600/20 hover:bg-red-600/30 border border-red-600/50 text-red-300 rounded-lg transition-all text-sm font-medium"
-          >
-            Sign Out
-          </button>
-        </div>
 
-        {/* Error Message */}
-        {error && (
-          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/50 rounded-lg text-red-300 text-sm">
-            {error}
-          </div>
-        )}
-
-        {/* Search Bar */}
-        <div className="mb-8">
-          <div className="relative">
-            <Search className="absolute left-3 top-3 w-5 h-5 text-[#7d8590]" />
-            <input
-              type="text"
-              placeholder="Search repositories..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 bg-[#21262d] border border-[#30363d] rounded-lg text-[#e6edf3] placeholder-[#7d8590] focus:border-[#2f81f7] focus:outline-none focus:ring-2 focus:ring-[#2f81f7]/20 transition-all"
-            />
-          </div>
-        </div>
-
-        {/* Loading State */}
-        {isLoading ? (
-          <div className="flex items-center justify-center h-64">
-            <div className="text-center">
-              <Loader className="w-12 h-12 text-[#2f81f7] animate-spin mx-auto mb-4" />
-              <p className="text-[#7d8590]">Loading your repositories...</p>
-            </div>
-          </div>
-        ) : filteredRepos.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredRepos.map((repo) => (
+            {/* RIGHT: Sign Out Button */}
+            <div className="flex items-center">
               <button
-                key={repo.id}
-                onClick={() => handleRepoSelect(repo.owner.login, repo.name)}
-                className="p-5 rounded-lg bg-[#161b22] border border-[#30363d] hover:border-[#2f81f7]/50 hover:bg-[#1c2128] transition-all duration-300 transform hover:scale-105 active:scale-95 text-left group"
+                onClick={handleLogout}
+                className="px-4 py-1.5 text-xs font-medium bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 rounded-md transition-colors"
               >
-                <div className="flex items-start justify-between mb-3">
-                  <Github className="w-8 h-8 text-[#2f81f7] group-hover:text-[#1f6feb] transition-colors" />
-                  {repo.language && (
-                    <span className="px-2 py-1 bg-[#2f81f7]/20 text-[#2f81f7] rounded-full text-xs font-semibold">
-                      {repo.language}
-                    </span>
+                Sign Out
+              </button>
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      {/* MAIN CONTENT AREA */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-7xl mx-auto px-6 pt-6 pb-10">
+          <h2 className="text-xl font-semibold text-[#f0f6fc] mb-4">
+            Your repositories
+          </h2>
+          {/* Error Message */}
+          {error && (
+            <div className="mb-6 p-4 bg-red-500/10 border border-red-500/50 rounded-lg text-red-300 text-sm">
+              {error}
+            </div>
+          )}
+
+          {/* Loading & Grid State */}
+          {isLoading ? (
+            <div className="flex items-center justify-center h-64">
+              <div className="text-center">
+                <Loader className="w-10 h-10 text-[#2f81f7] animate-spin mx-auto mb-4" />
+                <p className="text-[#7d8590] text-sm">Loading your repositories...</p>
+              </div>
+            </div>
+          ) : filteredRepos.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {filteredRepos.map((repo) => (
+                <button
+                  key={repo.id}
+                  onClick={() => handleRepoSelect(repo.owner.login, repo.name)}
+                  className="p-4 rounded-lg bg-[#161b22] border border-[#30363d] 
+                  hover:border-[#2f81f7]/50 hover:bg-[#1c2128]
+                  transition-all duration-200 group text-left flex flex-col h-full"
+                >
+                  <div className="flex items-start justify-between mb-3 w-full">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Github className="w-5 h-5 text-[#7d8590] group-hover:text-[#2f81f7] transition-colors flex-shrink-0" />
+                      <h3 className="text-sm font-semibold text-[#f0f6fc] group-hover:text-[#2f81f7] transition-colors truncate">
+                        {repo.name}
+                      </h3>
+                    </div>
+                    {repo.language && (
+                      <span className="px-2 py-0.5 bg-[#2f81f7]/10 text-[#2f81f7] rounded-full text-[10px] font-medium border border-[#2f81f7]/20 flex-shrink-0">
+                        {repo.language}
+                      </span>
+                    )}
+                  </div>
+
+                  {repo.description && (
+                    <p className="text-xs text-[#7d8590] line-clamp-2 mb-4 flex-1">
+                      {repo.description}
+                    </p>
                   )}
-                </div>
 
-                <h3 className="text-lg font-semibold text-[#f0f6fc] group-hover:text-[#2f81f7] transition-colors truncate">
-                  {repo.name}
-                </h3>
-
-                {repo.description && (
-                  <p className="text-sm text-[#7d8590] mt-2 line-clamp-2">
-                    {repo.description}
-                  </p>
-                )}
-
-                <div className="flex items-center gap-3 mt-3 text-xs text-[#7d8590]">
-                  {repo.stargazers_count > 0 && (
-                    <div className="flex items-center gap-1 hover:text-[#2f81f7] transition-colors">
-                      <Star className="w-3 h-3" />
+                  <div className="flex items-center gap-4 text-xs text-[#7d8590] mt-auto pt-2 border-t border-[#30363d]/50">
+                    <div className="flex items-center gap-1">
+                      <Star className="w-3.5 h-3.5" />
                       {repo.stargazers_count}
                     </div>
-                  )}
-                  {repo.forks_count > 0 && (
-                    <div className="flex items-center gap-1 hover:text-[#2f81f7] transition-colors">
-                      <GitFork className="w-3 h-3" />
+                    <div className="flex items-center gap-1">
+                      <GitFork className="w-3.5 h-3.5" />
                       {repo.forks_count}
                     </div>
-                  )}
-                  {repo.watchers_count > 0 && (
-                    <div className="flex items-center gap-1 hover:text-[#2f81f7] transition-colors">
-                      <Eye className="w-3 h-3" />
+                    <div className="flex items-center gap-1">
+                      <Eye className="w-3.5 h-3.5" />
                       {repo.watchers_count}
                     </div>
-                  )}
-                </div>
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-16">
-            <p className="text-[#7d8590] mb-4">
-              {searchQuery ? 'No repositories found matching your search' : 'No repositories available'}
-            </p>
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="text-[#2f81f7] hover:text-[#1f6feb] transition-colors text-sm"
-              >
-                Clear search
-              </button>
-            )}
-          </div>
-        )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-20 bg-[#161b22]/50 rounded-xl border border-[#30363d] border-dashed">
+              <p className="text-[#7d8590] mb-3 text-sm">
+                {searchQuery ? 'No repositories found matching your search' : 'No repositories found'}
+              </p>
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="text-[#2f81f7] hover:underline text-sm"
+                >
+                  Clear search
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

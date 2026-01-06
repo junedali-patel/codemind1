@@ -17,7 +17,7 @@ const activities = [
 
 export default function ActivityBar({ activeView, onViewChange }: ActivityBarProps) {
   return (
-    <div className="w-14 bg-gradient-to-b from-[#2d2d30] to-[#1e1e1e] border-r border-[#3e3e42]/50 flex flex-col items-center py-4 gap-4 shadow-lg relative z-20">
+    <div className="fixed left-0 top-0 h-screen w-12 bg-[#333333] border-r border-[#1e1e1e] flex flex-col items-center py-2 z-50">
       <style jsx>{`
         @keyframes pulse {
           0%, 100% {
