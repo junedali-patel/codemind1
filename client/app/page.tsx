@@ -225,7 +225,7 @@ export default function HomePage() {
       {/* NEW NAVBAR: Aligns Logo, Search, and Sign Out */}
       <nav className="sticky top-0 z-50 w-full border-b border-[#30363d] bg-[#161b22]/95 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-6">
-          <div className="flex h-14 items-center justify-between gap-6">
+          <div className="flex h-14 items-center gap-4 md:gap-6 flex-wrap md:flex-nowrap">
             {/* LEFT: Logo & Name */}
             <div className="flex items-center gap-2 pl-1 flex-shrink-0">
               <div className="p-1.5 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg shadow-lg shadow-blue-500/20">
@@ -235,27 +235,27 @@ export default function HomePage() {
             </div>
 
             {/* CENTER: Search Bar (Moved here for alignment) */}
-            <div className="w-full max-w-sm mx-6">
+            <div className="flex-1 w-full max-w-[360px] sm:max-w-[420px] mx-4">
               <div className="relative group">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#7d8590] pointer-events-none" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#7d8590] pointer-events-none" />
                 <input
                   type="text"
                   placeholder="Search repositories"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full h-9 pl-12 pr-4 bg-[#0d1117] border border-[#30363d] rounded-full 
-             text-sm text-[#e6edf3] placeholder-[#7d8590]
-             focus:border-[#2f81f7] focus:outline-none focus:ring-1 focus:ring-[#2f81f7]
-             transition-all"
+                  className="w-full h-10 pl-10 pr-4 bg-[#0d1117] border border-[#30363d] rounded-full 
+                  text-sm text-[#e6edf3] placeholder-[#7d8590]
+                  focus:border-[#2f81f7] focus:outline-none focus:ring-2 focus:ring-[#2f81f7]/40
+                  transition-all"
                 />
               </div>
             </div>
 
             {/* RIGHT: Sign Out Button */}
-            <div className="flex items-center">
+            <div className="flex items-center justify-end flex-shrink-0">
               <button
                 onClick={handleLogout}
-                className="px-4 py-1.5 text-xs font-medium bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 rounded-md transition-colors"
+                className="h-10 px-4 text-sm font-medium bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-400 rounded-full transition-colors whitespace-nowrap"
               >
                 Sign Out
               </button>
@@ -266,7 +266,7 @@ export default function HomePage() {
 
       {/* MAIN CONTENT AREA */}
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-7xl mx-auto px-6 pt-6 pb-10">
+        <div className="max-w-4xl mx-auto px-6 pt-6 pb-10">
           <h2 className="text-xl font-semibold text-[#f0f6fc] mb-4">
             Your repositories
           </h2>
