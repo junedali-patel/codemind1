@@ -52,16 +52,16 @@ function FileTreeItem({
         {isDirectory ? (
           <>
             {expanded ? (
-              <ChevronDown size={16} className="text-[#0ea5e9]" />
+              <ChevronDown size={14} className="text-[#0ea5e9]" />
             ) : (
-              <ChevronRight size={16} className="text-[#858585]" />
+              <ChevronRight size={14} className="text-[#858585]" />
             )}
-            <FolderOpen size={16} className="text-[#dcb939]" />
+            <FolderOpen size={14} className="text-[#dcb939]" />
           </>
         ) : (
           <>
             <div className="w-4" />
-            <File size={16} className="text-[#6ba3ff]" />
+            <File size={14} className="text-[#6ba3ff]" />
           </>
         )}
         <span className="text-[13px] flex-1 truncate font-medium">{file.name}</span>

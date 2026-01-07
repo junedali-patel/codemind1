@@ -12,7 +12,7 @@ interface SidebarProps {
 
 export default function Sidebar({
   title,
-  width = 250,
+  width = 200,
   onClose = () => {},
   children
 }: SidebarProps) {
