@@ -1,13 +1,15 @@
 'use client';
 
-import { FolderOpen, File, ChevronRight, ChevronDown } from 'lucide-react';
+import { FolderOpen, File, ChevronRight, ChevronDown, GitBranch, Network } from 'lucide-react';
 
+// --- UPDATE 1: Added 'content' to the interface ---
 export interface FileNode {
   id: string;
   name: string;
   type: 'file' | 'directory';
   children?: FileNode[];
   icon?: string;
+  content?: string; // <--- NEW: Holds the code for the Mind Map to read
 }
 
 interface ExplorerViewProps {
@@ -16,6 +18,7 @@ interface ExplorerViewProps {
   onFileClick: (file: FileNode) => void;
   onDirToggle: (path: string) => void;
   selectedFile: FileNode | null;
+  onGenerateVisualization?: (file: FileNode, type: 'flowchart' | 'mindmap') => void;
 }
 
 function FileTreeItem({
@@ -34,7 +37,7 @@ function FileTreeItem({
   const isDirectory = file.type === 'directory';
 
   return (
-    <div key={file.id}>
+    <div>
       <div
         className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer transition-all duration-150 rounded-sm ${
           selected
@@ -45,6 +48,7 @@ function FileTreeItem({
           if (isDirectory) {
             onDirToggle(file.id);
           } else {
+            // This passes the whole file object (including content) up to the parent
             onFileClick(file);
           }
         }}
@@ -73,7 +77,7 @@ function FileTreeItem({
             <FileTreeItem
               key={child.id}
               file={child}
-              expanded={true}
+              expanded={true} // Simplified for recursive view, or pass specific state
               selected={selected}
               onFileClick={onFileClick}
               onDirToggle={onDirToggle}
@@ -90,17 +94,20 @@ export default function ExplorerView({
   expandedDirs,
   onFileClick,
   onDirToggle,
-  selectedFile
+  selectedFile,
+  onGenerateVisualization
 }: ExplorerViewProps) {
+  const isFileSelected = selectedFile && selectedFile.type === 'file';
+
   return (
-    <div className="p-3 text-[#cccccc]">
+    <div className="p-3 text-[#cccccc] flex flex-col h-full">
       <style jsx>{`
         .explorer-section {
           margin-bottom: 16px;
         }
 
         .section-title {
-          font-size: 12px;
+          font-size: 11px;
           font-weight: 600;
           text-transform: uppercase;
           letter-spacing: 0.5px;
@@ -114,14 +121,20 @@ export default function ExplorerView({
         .section-title:hover {
           color: #cccccc;
         }
+
+        .visualization-actions {
+          margin-top: auto;
+          padding-top: 12px;
+          border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
       `}</style>
 
-      <div className="explorer-section">
-        <div className="section-title">OPEN EDITORS</div>
+      <div className="explorer-section flex-1 overflow-y-auto">
+        <div className="section-title">PROJECT FILES</div>
         <div className="space-y-0.5">
           {files.length === 0 && (
             <div className="text-[#858585] text-[12px] px-3 py-2">
-              No open editors
+              No files found
             </div>
           )}
           {files.map((file) => (
@@ -137,12 +150,31 @@ export default function ExplorerView({
         </div>
       </div>
 
-      <div className="explorer-section">
-        <div className="section-title">RECENT</div>
-        <div className="text-[#858585] text-[12px] px-3 py-2">
-          No recent files
+      {/* Visualization Actions - Only show for selected files */}
+      {isFileSelected && onGenerateVisualization && (
+        <div className="visualization-actions">
+          <div className="section-title">VISUALIZE CODE</div>
+          <div className="flex flex-col gap-2 px-2">
+            <button
+              onClick={() => onGenerateVisualization(selectedFile, 'flowchart')}
+              className="flex items-center gap-2 px-3 py-2 rounded text-xs font-medium transition-all bg-[#3c3c3c] hover:bg-[#4c4c4c] text-gray-300 hover:text-white"
+              title="Generate flowchart for selected file"
+            >
+              <GitBranch size={14} />
+              <span>Generate Flowchart</span>
+            </button>
+            <button
+              onClick={() => onGenerateVisualization(selectedFile, 'mindmap')}
+              className="flex items-center gap-2 px-3 py-2 rounded text-xs font-medium transition-all bg-[#3c3c3c] hover:bg-[#4c4c4c] text-gray-300 hover:text-white"
+              title="Generate mindmap for selected file"
+            >
+              <Network size={14} />
+              <span>Generate Mindmap</span>
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
+

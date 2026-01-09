@@ -99,7 +99,18 @@ export default function HomePage() {
       });
 
       if (!response.ok) {
-        throw new Error(`Backend returned status ${response.status}`);
+        // Try to get error details from response
+        let errorMessage = `Backend returned status ${response.status}`;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.message || errorData.error || errorMessage;
+          if (errorData.details) {
+            errorMessage += `: ${errorData.details}`;
+          }
+        } catch (e) {
+          // If response is not JSON, use default message
+        }
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
@@ -111,9 +122,13 @@ export default function HomePage() {
       // Backend will redirect from GitHub back to http://localhost:4000/api/github/callback
       // Then backend redirects to http://localhost:3000/?token=... or /auth-success?token=...
       window.location.href = data.url;
-    } catch (error) {
+    } catch (error: any) {
       console.error('[Login Error]', error);
-      setError(`Failed to initiate GitHub login. Please try again.`);
+      // Display the actual error message from the server if available
+      const errorMessage = error?.message || 'Failed to initiate GitHub login';
+      setError(errorMessage.includes('not configured') || errorMessage.includes('required')
+        ? errorMessage 
+        : `Failed to initiate GitHub login: ${errorMessage}`);
       setIsSigningIn(false);
     }
   };

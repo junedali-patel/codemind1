@@ -43,7 +43,21 @@ const verifyGitHubToken = (req, res, next) => {
 router.get('/auth/github-url', (req, res) => {
   try {
     if (!GITHUB_CLIENT_ID) {
-      return res.status(500).json({ error: 'GitHub Client ID not configured' });
+      console.error('[OAuth URL] GitHub Client ID not configured in environment variables');
+      return res.status(500).json({ 
+        error: 'GitHub OAuth not configured',
+        message: 'GitHub Client ID is required. Please set GITHUB_CLIENT_ID environment variable in your server .env file.',
+        details: 'See server/.env.example or documentation for setup instructions.'
+      });
+    }
+
+    // Validate GITHUB_CLIENT_ID format (basic check - should be a string)
+    if (typeof GITHUB_CLIENT_ID !== 'string' || GITHUB_CLIENT_ID.trim().length === 0) {
+      console.error('[OAuth URL] GitHub Client ID is empty or invalid');
+      return res.status(500).json({ 
+        error: 'Invalid GitHub Client ID configuration',
+        message: 'GITHUB_CLIENT_ID environment variable is set but appears to be empty or invalid.'
+      });
     }
 
     const githubOAuthUrl =
@@ -55,7 +69,11 @@ router.get('/auth/github-url', (req, res) => {
     res.json({ url: githubOAuthUrl });
   } catch (err) {
     console.error('[OAuth URL Error]', err);
-    res.status(500).json({ error: 'Failed to generate OAuth URL' });
+    res.status(500).json({ 
+      error: 'Failed to generate OAuth URL',
+      message: err.message || 'An unexpected error occurred while generating the OAuth URL',
+      details: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
   }
 });
 

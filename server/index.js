@@ -2,7 +2,7 @@
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
-
+const path = require("path");
 // Import routes
 const aiRoutes = require('./routes/ai');
 const githubRoutes = require('./routes/github');
@@ -12,6 +12,9 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 const GITHUB_CALLBACK_URL = process.env.GITHUB_CALLBACK_URL || 'http://localhost:4000/api/github/callback';
+
+
+app.use("/tmp", express.static(path.join(__dirname, "../tmp")));
 
 // Setup middleware
 app.use(cors({

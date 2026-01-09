@@ -24,6 +24,8 @@ interface IDELayoutProps {
   activeTabId?: string;
   onTabClick?: (tabId: string) => void;
   onTabClose?: (tabId: string) => void;
+  onGenerateVisualization?: (file: FileNode, type: 'flowchart' | 'mindmap') => void;
+  selectedFileContent?: string | null;
 
   // Analysis panel
   analysisPanel?: {
@@ -52,6 +54,8 @@ export default function IDELayout({
   activeTabId = '',
   onTabClick = () => {},
   onTabClose = () => {},
+  onGenerateVisualization,
+  selectedFileContent = null,
   analysisPanel,
   statusBarProps = {}
 }: IDELayoutProps) {
@@ -84,6 +88,7 @@ export default function IDELayout({
             onFileClick={onFileClick}
             onDirToggle={onDirToggle}
             selectedFile={selectedFile}
+            onGenerateVisualization={onGenerateVisualization}
           />
         );
       case 'search':
@@ -91,7 +96,7 @@ export default function IDELayout({
       case 'git':
         return <GitView />;
       case 'mindmap':
-        return <MindMapView />;
+        return <MindMapView selectedFileContent={selectedFileContent} />;
       case 'extensions':
         return (
           <div className="p-3 text-sm text-[#858585] text-center">

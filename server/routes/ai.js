@@ -59,6 +59,229 @@ function withTimeout(promise, ms, timeoutMessage = 'Request timed out') {
 }
 
 /**
+ * Utility: Fix common Mermaid mindmap syntax issues
+ * - Quotes node labels with special characters
+ * - Fixes improper node formatting
+ * - Removes duplicate hyphens or invalid patterns
+ * - Splits multiple nodes on the same line (e.g. "- A()   \"B()\"")
+ */
+/**
+ * Enhanced mindmap syntax fixer
+ * Removes parentheses, periods, and special chars from all node labels
+ * Ensures one node per line, proper indentation
+ */
+function fixMindmapSyntax(mermaidCode) {
+  if (!mermaidCode || typeof mermaidCode !== 'string') return mermaidCode;
+  
+  const lines = mermaidCode.split('\n');
+  const fixed = [];
+  let rootFound = false;
+  
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i].trim();
+    
+    if (!line) continue;
+    
+    // Keep mindmap declaration
+    if (line.toLowerCase() === 'mindmap') {
+      fixed.push('mindmap');
+      continue;
+    }
+    
+    // Handle root node
+    if (!rootFound && line.match(/root\(\([^)]+\)\)/i)) {
+      // Extract root label
+      const rootMatch = line.match(/root\(\(([^)]+)\)\)/i);
+      if (rootMatch && rootMatch[1]) {
+        let rootLabel = rootMatch[1]
+          .replace(/[()[\]{}|;:.<>\/\\'"`,!@#$%^&*+=?]/g, '') // Remove ALL special chars
+          .replace(/\s+/g, ' ')
+          .trim();
+        
+        // Take max 2 words
+        const words = rootLabel.split(' ').filter(w => w.length > 0);
+        rootLabel = words.slice(0, 2).join(' ');
+        
+        // Default if empty
+        if (!rootLabel || rootLabel.length < 2) {
+          rootLabel = 'Code Structure';
+        }
+        
+        fixed.push(`  root((${rootLabel}))`);
+        rootFound = true;
+      }
+      continue;
+    }
+    
+    // Split multiple nodes on same line
+    const nodes = line.split(/\s{3,}/);
+    
+    for (const node of nodes) {
+      let cleaned = node
+        .replace(/^[-*•:>\s]+/, '') // Remove leading symbols
+        .replace(/[()[\]{}|;:.<>\/\\'"`,!@#$%^&*+=?]/g, '') // Remove special chars
+        .replace(/\s+/g, ' ')
+        .trim();
+      
+      if (cleaned) {
+        // Determine indentation (default 4 spaces for children)
+        const indent = '    ';
+        fixed.push(`${indent}${cleaned}`);
+      }
+    }
+  }
+  
+  // Ensure root exists
+  if (!rootFound) {
+    fixed.splice(1, 0, '  root((Code))');
+  }
+  
+  // Ensure at least one child
+  if (fixed.length < 3) {
+    fixed.push('    Empty');
+  }
+  
+  return fixed.join('\n');
+}
+
+/**
+ * Helper: Quote a label if it contains special characters
+ */
+function quoteIfNeeded(label) {
+  if (!label) return label;
+  
+  // If already quoted, return as is
+  if (/^["'].*["']$/.test(label)) {
+    return label;
+  }
+  
+  // If label contains special characters that need quoting
+  // Special characters: ()[]{}.,:;!?@#$%^&*+-=<>/|\`
+  if (/[()\[\]{}.,:;!?@#$%^&*+\-=<>/|\\`]/.test(label)) {
+    // Escape any quotes in the label
+    label = label.replace(/"/g, '\\"');
+    return `"${label}"`;
+  }
+  
+  return label;
+}
+
+/**
+ * Utility: Fix common Mermaid flowchart syntax issues
+ * - Removes forbidden characters from node labels
+ * - Ensures node syntax is correct: id["label"] or id{"label"}
+ * - Ensures each node/edge is on its own line
+ * - Fixes common formatting errors that cause parse errors
+ */
+/**
+/**
+ * PRODUCTION-READY Flowchart Fixer
+ * Handles: Duplicate IDs, Nested Quotes, Special Chars, Long Labels
+ */
+function fixFlowchartSyntax(mermaidCode) {
+  if (!mermaidCode || typeof mermaidCode !== 'string') return mermaidCode;
+  
+  const lines = mermaidCode.split('\n');
+  const fixed = [];
+  let headerFound = false;
+  
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i].trim();
+    
+    if (!line) continue;
+    
+    if (!headerFound && /^flowchart\s+(TD|LR|TB|RL)/i.test(line)) {
+      fixed.push('flowchart TD');
+      headerFound = true;
+      continue;
+    }
+    
+    // Fix duplicate node IDs (ALL patterns)
+    line = line.replace(/\b([A-Z][A-Z0-9_]*)(\[[^\]]*\])\1\b/gi, '$1$2');
+    line = line.replace(/\b([A-Z][A-Z0-9_]*)(\([^\)]*\))\1\b/gi, '$1$2');
+    line = line.replace(/\b([A-Z][A-Z0-9_]*)(\{[^}]*\})\1\b/gi, '$1$2');
+    line = line.replace(/\b([A-Z][A-Z0-9_]*)(\(\[[^\]]*\]\))\1\b/gi, '$1$2');
+    
+    // Remove ALL quotes from inside labels
+    line = line.replace(/\["([^"]*)"\]/g, (match, content) => {
+      const clean = content
+        .replace(/["'`]/g, '') // Remove quotes
+        .replace(/[()[\]{}|;:.]/g, '') // Remove special chars
+        .replace(/\s+/g, ' ')
+        .trim()
+        .substring(0, 40);
+      return `["${clean}"]`;
+    });
+    
+    line = line.replace(/\{([^}]+)\}/g, (match, content) => {
+      const clean = content
+        .replace(/["'`]/g, '')
+        .replace(/[()[\]{}|;:.]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .substring(0, 30);
+      return `{${clean}}`;
+    });
+    
+    line = line.replace(/\(\["([^"]*)"\]\)/g, (match, content) => {
+      const clean = content
+        .replace(/["'`]/g, '')
+        .replace(/[()[\]{}|;:.]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      return `(["${clean}"])`;
+    });
+    
+    if (line.trim()) {
+      fixed.push(line);
+    }
+  }
+  
+  if (!headerFound) {
+    fixed.unshift('flowchart TD');
+  }
+  
+  return fixed.join('\n');
+}
+
+/**
+ * Validate and auto-fix flowchart before returning
+ */
+function validateAndFixFlowchart(mermaidCode) {
+  let code = mermaidCode;
+  let iterations = 0;
+  const maxIterations = 3;
+  
+  while (iterations < maxIterations) {
+    iterations++;
+    
+    // Check for duplicate IDs pattern
+    const duplicatePattern = /\b([A-Za-z0-9_]+)(\[[^\]]+\])\1(?=\s|-->|$)/;
+    if (duplicatePattern.test(code)) {
+      console.warn(`[Validator] Found duplicate IDs, fixing... (iteration ${iterations})`);
+      code = code.replace(duplicatePattern, '$1$2');
+      continue;
+    }
+    
+    // Check for quotes inside labels
+    const quotesPattern = /\["[^"]*"[^"]*"[^"]*"\]/;
+    if (quotesPattern.test(code)) {
+      console.warn(`[Validator] Found nested quotes, fixing... (iteration ${iterations})`);
+      code = code.replace(/\["([^"]*)"/g, (match, content) => {
+        const cleaned = content.replace(/["']/g, '');
+        return `["${cleaned}"`;
+      });
+      continue;
+    }
+    
+    // No more issues found
+    break;
+  }
+  
+  return code;
+}
+
+/**
  * Utility: extract code-only content from AI message.
  * Preferred behavior:
  * 1. If there are triple-backtick code blocks, return their contents concatenated.
@@ -244,6 +467,188 @@ async function generateWithFallback(messages = [], options = {}) {
         }
       }
     }
+  }
+}
+
+/**
+ * Enhanced Mermaid syntax validator for flowcharts and mind maps
+ * Checks for forbidden characters, correct header, and node/edge syntax
+ */
+/**
+ * Enhanced Mermaid syntax validator for flowcharts and mind maps
+ * NOW CORRECTLY validates only label content, not syntax characters
+ */
+function validateMermaid(mermaidCode, diagramType) {
+  if (!mermaidCode || typeof mermaidCode !== 'string') {
+    return { valid: false, error: 'No Mermaid code provided.' };
+  }
+  
+  const lines = mermaidCode.split('\n').map(l => l.trim()).filter(Boolean);
+  
+  if (diagramType === 'flowchart') {
+    // Check header
+    if (!lines[0] || !lines[0].toLowerCase().startsWith('flowchart')) {
+      return { valid: false, error: 'Flowchart must start with "flowchart TD" or "flowchart LR".' };
+    }
+    
+    // Validate each line
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i];
+      
+      // Extract labels from node syntax: ["label"] or {"label"}
+      const nodeLabels = line.match(/\["([^"]*)"\]|\{"([^"]*)"\}/g);
+      
+      if (nodeLabels) {
+        for (const labelMatch of nodeLabels) {
+          // Extract just the label content
+          const label = labelMatch.replace(/[\[\]\{\}"]/g, '');
+          
+          // Check for forbidden characters ONLY in label content
+          if (/[()[\]{}|]/.test(label)) {
+            return { 
+              valid: false, 
+              error: `Forbidden characters in label "${label}". Remove: ( ) [ ] { } |` 
+            };
+          }
+          
+          // Check label length
+          if (label.split(' ').length > 8) {
+            return { 
+              valid: false, 
+              error: `Label too long: "${label.substring(0, 30)}..."` 
+            };
+          }
+        }
+      }
+      
+      // Check for common syntax errors
+      // Unmatched brackets
+      const openBrackets = (line.match(/\[/g) || []).length;
+      const closeBrackets = (line.match(/\]/g) || []).length;
+      if (openBrackets !== closeBrackets) {
+        return { valid: false, error: `Unmatched brackets in line: ${line}` };
+      }
+    }
+    
+    return { valid: true };
+    
+  } else if (diagramType === 'mindmap') {
+    // Check header
+    if (!lines[0] || lines[0].toLowerCase() !== 'mindmap') {
+      return { valid: false, error: 'Mindmap must start with "mindmap".' };
+    }
+    
+    // Check for root node
+    let hasRoot = false;
+    let rootLine = -1;
+    
+    for (let i = 1; i < lines.length; i++) {
+      if (lines[i].match(/root\(\([^)]+\)\)/i)) {
+        hasRoot = true;
+        rootLine = i;
+        break;
+      }
+    }
+    
+    if (!hasRoot) {
+      return { valid: false, error: 'Mindmap missing root node. Format: root((Name))' };
+    }
+    
+    // Validate root node
+    const rootMatch = lines[rootLine].match(/root\(\(([^)]+)\)\)/i);
+    if (rootMatch && rootMatch[1]) {
+      const rootLabel = rootMatch[1];
+      
+      // Check for forbidden characters in root label
+      if (/[()[\]{}|;:.<>]/.test(rootLabel)) {
+        return { 
+          valid: false, 
+          error: `Root label contains forbidden characters: "${rootLabel}"` 
+        };
+      }
+      
+      // Check if root looks like a filename
+      if (/\.[a-z]{2,4}$/i.test(rootLabel) || /[\/\\]/.test(rootLabel)) {
+        return { 
+          valid: false, 
+          error: `Root should not be a filename: "${rootLabel}". Use simple name like "Code Structure"` 
+        };
+      }
+    }
+    
+    // Validate child nodes
+    for (let i = rootLine + 1; i < lines.length; i++) {
+      const line = lines[i];
+      const content = line.trim();
+      
+      // Skip if empty
+      if (!content) continue;
+      
+      // Check for multiple nodes on same line (3+ spaces between words)
+      if (/\w+\s{3,}\w+/.test(content)) {
+        return { 
+          valid: false, 
+          error: `Multiple nodes on same line ${i + 1}: "${line}". Put each on separate line.` 
+        };
+      }
+      
+      // Check for parentheses in child nodes (function syntax)
+      if (!content.includes('root((') && content.includes('(')) {
+        return { 
+          valid: false, 
+          error: `Parentheses in child node line ${i + 1}: "${content}". Remove () from names.` 
+        };
+      }
+      
+      // Check indentation (must be even number of spaces)
+      const leadingSpaces = line.length - line.trimLeft().length;
+      if (leadingSpaces > 0 && leadingSpaces % 2 !== 0) {
+        return { 
+          valid: false, 
+          error: `Invalid indentation on line ${i + 1}. Use 2 spaces per level.` 
+        };
+      }
+    }
+    
+    // Must have at least one child
+    if (lines.length < 3) {
+      return { valid: false, error: 'Mindmap has no children. Add at least one child node.' };
+    }
+    
+    return { valid: true };
+  }
+  
+  return { valid: false, error: 'Unknown diagram type.' };
+}
+
+/**
+ * Fallback: minimal valid Mermaid diagram for flowchart or mindmap
+ */
+/**
+ * Fallback: minimal valid Mermaid diagram
+ */
+function getFallbackMermaid(diagramType, errorMsg = 'Unknown error') {
+  console.log(`[Fallback] Creating fallback ${diagramType}. Reason: ${errorMsg}`);
+  
+  if (diagramType === 'flowchart') {
+    return `flowchart TD
+    A(["Start"]) --> B["Analyze Code"]
+    B --> C{"Valid Syntax?"}
+    C -->|No| D["Use Fallback"]
+    C -->|Yes| E["Render Diagram"]
+    D --> F(["End"])
+    E --> F`;
+  } else {
+    return `mindmap
+  root((Code Analysis))
+    Status
+      Fallback Mode
+    Components
+      Functions
+      Classes
+      Variables
+    Note
+      Check console`;
   }
 }
 
@@ -572,6 +977,471 @@ router.post('/chat', async (req, res) => {
     });
   }
 });
+
+/**
+ * POST /api/ai/generate-diagram
+ * Expects: { codeContent: string, diagramType: 'flowchart' | 'mindmap' }
+ * Returns: { mermaidCode: string, success: boolean }
+ *
+ * Converts code to Mermaid diagram format (flowchart or mindmap).
+ */
+router.post("/generate-diagram", async (req, res) => {
+  const { codeContent, diagramType } = req.body;
+
+  if (!codeContent || typeof codeContent !== "string") {
+    return res.status(400).json({ error: "No code content provided" });
+  }
+
+  if (!diagramType || !["flowchart", "mindmap"].includes(diagramType)) {
+    return res
+      .status(400)
+      .json({ error: 'diagramType must be "flowchart" or "mindmap"' });
+  }
+
+  try {
+    console.log(
+      `[generate-diagram] Generating ${diagramType} for code (${codeContent.length} chars)`
+    );
+
+    // Build prompt based on diagram type
+    let systemPrompt, userPrompt;
+
+    if (diagramType === "flowchart") {
+      systemPrompt =
+        "Generate Mermaid flowchart. Output ONLY flowchart code with no explanations. CRITICAL: Each node ID must appear ONCE before its label.";
+
+      userPrompt = `Create flowchart from code.
+    
+    CRITICAL SYNTAX RULES:
+    
+    1. Start with: flowchart TD
+    
+    2. Node format (EXACTLY like this):
+       ✅ CORRECT: A["Action"]
+       ❌ WRONG: A["Action"]A
+       ❌ WRONG: A[Label]A
+       
+    3. NO quotes inside labels:
+       ✅ CORRECT: A["Process file"]
+       ❌ WRONG: A["Process "file""]
+       ❌ WRONG: A[Process 'file']
+    
+    4. Connection format:
+       ✅ CORRECT: A["Start"] --> B["Process"]
+       ❌ WRONG: A["Start"]A --> B["Process"]B
+       
+    5. Decision format:
+       ✅ CORRECT: C{"Is valid?"}
+       ❌ WRONG: C{"Is valid?"}C
+    
+    6. NO special chars in labels:
+       Remove: ( ) [ ] { } | ; : . ' "
+       
+    7. Keep labels SHORT (max 4 words)
+    
+    EXAMPLE CORRECT FLOWCHART:
+    flowchart TD
+        A(["Start"]) --> B["Read file"]
+        B --> C{"File exists?"}
+        C -->|Yes| D["Process data"]
+        C -->|No| E["Show error"]
+        D --> F(["End"])
+        E --> F
+    
+    COMMON MISTAKES TO AVOID:
+    ❌ A[Label]A --> B[Label]  (duplicate IDs)
+    ❌ A["Text with "quotes""] (quotes inside)
+    ❌ A[Very long label that goes on and on] (too long)
+    
+    Code:
+    \`\`\`
+    ${codeContent.substring(0, 3000)}
+    \`\`\`
+    
+    Output ONLY the flowchart. Each node ID appears ONCE.`;
+    } else {
+      systemPrompt =
+        "You are an expert code analyst creating Mermaid mindmaps for developers. Your mindmaps must be clear, accurate, and helpful for understanding code structure. Output ONLY valid Mermaid mindmap syntax with NO explanations, markdown, or extra text.";
+
+      userPrompt = `Analyze this code and create a developer-focused Mermaid mindmap showing its structure.
+    
+    ═══════════════════════════════════════════════════════════════
+    📋 MINDMAP STRUCTURE RULES (FOLLOW EXACTLY)
+    ═══════════════════════════════════════════════════════════════
+    
+    1️⃣ LINE 1: mindmap
+    
+    2️⃣ LINE 2: root((SimpleName))
+       - Use 1-2 words describing the code's PURPOSE
+       - NO file extensions, NO paths, NO code syntax
+       - ✅ GOOD: root((User Service)), root((Data Parser)), root((API Handler))
+       - ❌ WRONG: root((userService.js)), root((parse())), root((src/utils))
+    
+    3️⃣ FIRST LEVEL (2 spaces indent):
+       Main categories that make sense for code:
+       - Functions (if code has functions)
+       - Classes (if code has classes)
+       - Methods (for class methods)
+       - Components (for React/Vue)
+       - Endpoints (for API routes)
+       - Modules (for imports/exports)
+       - Variables (for important state/config)
+       - Types (for TypeScript interfaces/types)
+       - Hooks (for React hooks)
+       - Utilities (for helper functions)
+       - Main Flow (for procedural code)
+    
+    4️⃣ SECOND LEVEL (4 spaces indent):
+       Actual names from code:
+       - Function names WITHOUT ()
+       - Class names
+       - Component names
+       - Variable names
+       - ONE name per line
+    
+    5️⃣ THIRD LEVEL (6 spaces indent) - OPTIONAL:
+       Brief descriptions in 2-3 words:
+       - What it does, NOT how
+       - Plain English only
+       - Examples: "Validates input", "Fetches data", "Handles errors"
+    
+    ═══════════════════════════════════════════════════════════════
+    🚫 FORBIDDEN (WILL CAUSE ERRORS)
+    ═══════════════════════════════════════════════════════════════
+    
+    ❌ NO parentheses: readFile() → readFile
+    ❌ NO dots: fs.readFile → readFile
+    ❌ NO special chars: @, #, $, %, ^, &, *, =, +, -, <, >, /, \\, |, ;, :
+    ❌ NO multiple nodes on same line
+    ❌ NO quotes around node names
+    ❌ NO code syntax or literals
+    ❌ NO file paths or extensions
+    
+    ═══════════════════════════════════════════════════════════════
+    📚 EXAMPLES FOR DIFFERENT CODE TYPES
+    ═══════════════════════════════════════════════════════════════
+    
+    Example 1: Express API Server
+    mindmap
+      root((API Server))
+        Routes
+          userRoutes
+          authRoutes
+          dataRoutes
+        Middleware
+          authenticate
+          validateInput
+          errorHandler
+        Controllers
+          UserController
+          AuthController
+        Database
+          connectDB
+          UserModel
+    
+    Example 2: React Component
+    mindmap
+      root((Todo App))
+        Components
+          TodoList
+          TodoItem
+          AddTodo
+        Hooks
+          useTodos
+          useLocalStorage
+        Functions
+          addTodo
+          deleteTodo
+          toggleComplete
+        State
+          todos
+          filter
+    
+    Example 3: Python Data Processing
+    mindmap
+      root((Data Processor))
+        Classes
+          DataLoader
+          DataCleaner
+          DataAnalyzer
+        Functions
+          loadCSV
+          cleanData
+          analyze
+          exportResults
+        Variables
+          CONFIG
+          COLUMNS
+    
+    Example 4: Utility Module
+    mindmap
+      root((String Utils))
+        Functions
+          capitalize
+          slugify
+          truncate
+          sanitize
+        Helpers
+          isString
+          isEmpty
+        Constants
+          MAX_LENGTH
+          SPECIAL_CHARS
+    
+    ═══════════════════════════════════════════════════════════════
+    🎯 WHAT TO INCLUDE (Priority Order)
+    ═══════════════════════════════════════════════════════════════
+    
+    1. **Exported items** (public API) - MOST IMPORTANT
+    2. **Main functions/classes** that define the module's purpose
+    3. **Important state/configuration** variables
+    4. **Key imports** (if they define functionality)
+    5. **Significant helper functions**
+    
+    What to SKIP:
+    - Private/internal functions starting with _ or #
+    - Simple getters/setters
+    - Trivial one-liners
+    - Console.logs, comments
+    - Implementation details
+    
+    ═══════════════════════════════════════════════════════════════
+    💡 ANALYSIS HINTS BY LANGUAGE
+    ═══════════════════════════════════════════════════════════════
+    
+    JavaScript/TypeScript:
+    - Look for: function, const, class, export, interface, type
+    - Group: React components, hooks, utilities separately
+    
+    Python:
+    - Look for: def, class, @decorator
+    - Group: classes, functions, variables
+    
+    Java:
+    - Look for: class, public/private methods, interfaces
+    - Group: classes, methods, fields
+    
+    Go:
+    - Look for: func, struct, interface
+    - Group: functions, structs, methods
+    
+    ═══════════════════════════════════════════════════════════════
+    📝 CODE TO ANALYZE
+    ═══════════════════════════════════════════════════════════════
+    
+    \`\`\`
+    ${codeContent.substring(0, 3000)}
+    \`\`\`
+    
+    ═══════════════════════════════════════════════════════════════
+    🎬 YOUR TASK
+    ═══════════════════════════════════════════════════════════════
+    
+    1. Identify the code's main purpose
+    2. Find key functions, classes, components
+    3. Organize into logical categories
+    4. Create mindmap following EXACT format above
+    5. Output ONLY the mindmap code
+    
+    ⚠️ CRITICAL: Output format must be EXACTLY:
+    mindmap
+      root((TwoWords))
+        Category
+          item1
+          item2
+    
+    NO explanations. NO markdown. NO extra text. ONLY the mindmap.`;
+    }
+
+    const messages = [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ];
+
+    // ============================================
+    // LAYER 1: AI - Get raw output
+    // ============================================
+    console.log("[Layer 1: AI] Generating diagram...");
+    const result = await generateWithFallback(messages, {
+      timeoutMs: 120000,
+      num_predict: 1000,
+      temperature: 0.3,
+      max_tokens: 2000,
+    });
+
+    // Extract content
+    let rawContent = "";
+    if (result.source === "local") {
+      rawContent =
+        result.response.message?.content ||
+        result.response.output?.[0]?.content?.[0]?.text ||
+        JSON.stringify(result.response);
+    } else if (result.source === "groq") {
+      rawContent =
+        result.response.message?.content ||
+        result.response.raw?.choices?.[0]?.text ||
+        JSON.stringify(result.response.raw);
+    } else {
+      rawContent = JSON.stringify(result.response);
+    }
+
+    console.log(
+      "[Layer 1: AI] Raw output received:",
+      rawContent.substring(0, 100) + "..."
+    );
+
+    // ============================================
+    // LAYER 2: CLEANER - Fix syntax
+    // ============================================
+    console.log("[Layer 2: Cleaner] Cleaning code...");
+
+    // Remove markdown blocks
+    let mermaidCode = rawContent
+      .trim()
+      .replace(/```mermaid\s*/g, "")
+      .replace(/```\s*/g, "")
+      .trim();
+
+    // Ensure proper start
+    const mermaidMatch = mermaidCode.match(/(flowchart|mindmap|graph)[\s\S]*/i);
+    if (mermaidMatch) {
+      mermaidCode = mermaidMatch[0].trim();
+    } else {
+      mermaidCode =
+        (diagramType === "flowchart" ? "flowchart TD\n" : "mindmap\n") +
+        mermaidCode;
+    }
+
+    // Apply specialized cleaning
+    if (diagramType === "mindmap") {
+      mermaidCode = fixMindmapSyntax(mermaidCode);
+    } else if (diagramType === "flowchart") {
+      mermaidCode = fixFlowchartSyntax(mermaidCode);
+      mermaidCode = validateAndFixFlowchart(mermaidCode);
+    }
+
+    console.log("[Layer 2: Cleaner] Code cleaned");
+
+    // ============================================
+    // LAYER 3: VALIDATOR - Check syntax
+    // ============================================
+    console.log("[Layer 3: Validator] Validating...");
+    const validation = validateMermaid(mermaidCode, diagramType);
+
+    if (!validation.valid) {
+      console.warn(
+        "[Layer 3: Validator] ❌ Validation failed:",
+        validation.error
+      );
+
+      // Use fallback
+      const fallback = getFallbackMermaid(diagramType, validation.error);
+
+      return res.json({
+        success: true, // Still return success with fallback
+        mermaidCode: fallback,
+        diagramType,
+        isFallback: true,
+        validationError: validation.error,
+        metadata: {
+          usedModel: result.model,
+          source: result.source,
+          generatedAt: new Date().toISOString(),
+          wasFixed: true,
+        },
+      });
+    }
+
+    console.log("[Layer 3: Validator] ✅ Validation passed");
+
+    // ============================================
+    // SUCCESS - Return to frontend
+    // ============================================
+    return res.json({
+      success: true,
+      mermaidCode,
+      diagramType,
+      isFallback: false,
+      validationError: null,
+      metadata: {
+        usedModel: result.model,
+        source: result.source,
+        generatedAt: new Date().toISOString(),
+        wasFixed: false,
+      },
+    });
+  } catch (error) {
+    console.error("[generate-diagram] ❌ Error:", error);
+
+    // Return fallback on any error
+    const fallback = getFallbackMermaid(diagramType, error.message);
+
+    return res.json({
+      success: true,
+      mermaidCode: fallback,
+      diagramType,
+      isFallback: true,
+      validationError: error.message,
+      metadata: {
+        usedModel: "error-fallback",
+        source: "error-handler",
+        generatedAt: new Date().toISOString(),
+        wasFixed: true,
+      },
+    });
+  }
+});
+
+const { exec } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+/**
+ * POST /api/ai/export-diagram
+ * Expects: { mermaidCode: string, format: 'png' | 'svg' | 'pdf', diagramType: 'flowchart' | 'mindmap' }
+ * Returns: { url, success }
+ *
+ * Uses mermaid-cli to export diagrams as PNG, SVG, or PDF
+ */
+router.post('/export-diagram', async (req, res) => {
+  const { mermaidCode, format = 'png', diagramType = 'flowchart' } = req.body;
+  if (!mermaidCode || typeof mermaidCode !== 'string') {
+    return res.status(400).json({ error: 'No mermaidCode provided' });
+  }
+  if (!['png', 'svg', 'pdf'].includes(format)) {
+    return res.status(400).json({ error: 'Format must be png, svg, or pdf' });
+  }
+  if (!['flowchart', 'mindmap'].includes(diagramType)) {
+    return res.status(400).json({ error: 'diagramType must be flowchart or mindmap' });
+  }
+  try {
+    // Ensure tempDir exists (recursive for nested dirs)
+    const tempDir = path.join(__dirname, '../../tmp');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+    const fileId = 'diagram_' + Date.now();
+    const mmdPath = path.join(tempDir, `${fileId}.mmd`);
+    // Write Mermaid code with explicit font-family for PNG/PDF export
+    // This ensures text is visible in exported images
+    const fontStyle = '%%{init: {"themeVariables": {"fontFamily": "Arial, Helvetica, sans-serif", "fontSize": "18px", "fontWeight": "bold", "textColor": "#222"}}}%%\n';
+    const codeWithFont = (mermaidCode.startsWith('%%{init:') ? '' : fontStyle) + mermaidCode;
+    fs.writeFileSync(mmdPath, codeWithFont, 'utf8');
+    const outPath = path.join(tempDir, `${fileId}.${format}`);
+    // Run mermaid-cli (mmdc)
+    const cmd = `mmdc -i "${mmdPath}" -o "${outPath}" -t default`;
+    exec(cmd, (err) => {
+      if (err) {
+        return res.status(500).json({ success: false, error: 'Export failed', details: err.message });
+      }
+      // Serve file URL (ensure /tmp is exposed statically in Express for download)
+      return res.json({ success: true, url: `/tmp/${fileId}.${format}` });
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: 'Export error', details: error.message });
+  }
+});
+
 
 /* ---------------------------
    Utility endpoints (optional)

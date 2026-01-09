@@ -1,12 +1,12 @@
-// C:\codemind1\client\app\repo\[owner]\[repo]\page.tsx (COMPLETE - REPO PAGE WITH FILE EXPLORER & AI)
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import axios from 'axios';
-import { Code, File as FileIcon, FileText, FileImage, Sparkles, Loader2, ChevronRight, ChevronDown, Folder, AlertCircle } from 'lucide-react';
+import { Code, File as FileIcon, FileText, FileImage, Sparkles, Loader2, AlertCircle } from 'lucide-react';
 import CodeEditor from '@/components/CodeEditor';
 import IDELayout from '@/components/layout/IDELayout';
+import MindMapView from '@/components/views/MindMapView'; // <--- IMPORTED VISUALIZER
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:4000';
 
@@ -54,8 +54,8 @@ export default function RepoPage() {
   const [selectedFile, setSelectedFile] = useState<GitHubFile | null>(null);
   const [fileContent, setFileContent] = useState('');
   const [isLoadingFile, setIsLoadingFile] = useState(false);
-  const [showAnalysis, setShowAnalysis] = useState(false);
   const [streamingAnalysis, setStreamingAnalysis] = useState('');
+  const [visualizationTrigger, setVisualizationTrigger] = useState<{ type: 'flowchart' | 'mindmap' | null; timestamp?: number }>({ type: null });
 
   const getFileExtension = (filename: string) => {
     return filename.split('.').pop()?.toLowerCase() || '';
@@ -93,7 +93,6 @@ export default function RepoPage() {
 
     setIsAnalyzing(true);
     setError('');
-    setShowAnalysis(true);
     setStreamingAnalysis('');
 
     try {
@@ -166,8 +165,6 @@ export default function RepoPage() {
         throw new Error('Failed to fetch any file contents for analysis');
       }
 
-      console.log(`[Analysis] Successfully fetched ${filesWithContent.length} files`);
-
       const response = await fetch(`${API_BASE_URL}/api/ai/analyze-repo`, {
         method: 'POST',
         headers: {
@@ -184,16 +181,15 @@ export default function RepoPage() {
       if (!response.ok) {
         throw new Error(`Analysis failed: ${response.statusText}`);
       }
-// ---- NEW NON-STREAMING LOGIC ---- //
-const data = await response.json();
-
-if (!data.success) {
-  throw new Error(data.error || 'Analysis failed');
-}
-
-setStreamingAnalysis(data.analysis || '');
-
       
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.error || 'Analysis failed');
+      }
+
+      setStreamingAnalysis(data.analysis || '');
+
     } catch (err: any) {
       const errorMessage = err.response?.data?.message ||
         err.response?.data?.error ||
@@ -224,7 +220,6 @@ setStreamingAnalysis(data.analysis || '');
           headers: {
             'Authorization': `token ${githubToken}`,
             'Accept': 'application/vnd.github.v3+json',
-           // 'User-Agent': 'CodeMind.AI'
           },
           timeout: 10000
         }
@@ -235,7 +230,6 @@ setStreamingAnalysis(data.analysis || '');
       }
 
       if (Array.isArray(response.data)) {
-        console.log(`[Repo] Successfully loaded ${response.data.length} items`);
         setRepoContent(response.data);
       } else if ('message' in response.data) {
         throw new Error((response.data as any).message);
@@ -269,15 +263,12 @@ setStreamingAnalysis(data.analysis || '');
         throw new Error('GitHub authentication required');
       }
 
-      console.log(`[File] Fetching content for: ${file.path}`);
-
       const response = await axios.get(
         `https://api.github.com/repos/${owner}/${repo}/contents/${file.path}`,
         {
           headers: {
             'Authorization': `token ${githubToken}`,
             'Accept': 'application/vnd.github.v3+json',
-           // 'User-Agent': 'CodeMind.AI'
           },
           timeout: 10000
         }
@@ -319,25 +310,9 @@ setStreamingAnalysis(data.analysis || '');
     }
   }, [fetchRepoContent, fetchFileContent]);
 
-  const getFileIcon = (filename: string) => {
-    const extension = getFileExtension(filename);
-    const codeExtensions = ['js', 'jsx', 'ts', 'tsx', 'py', 'java', 'c', 'cpp', 'cs', 'go', 'rs', 'rb', 'php', 'swift', 'kt', 'dart'];
-    const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp'];
-
-    if (codeExtensions.includes(extension)) {
-      return <Code className="w-4 h-4 text-blue-400" />;
-    } else if (extension === 'md') {
-      return <FileText className="w-4 h-4 text-yellow-400" />;
-    } else if (imageExtensions.includes(extension)) {
-      return <FileImage className="w-4 h-4 text-green-400" />;
-    } else {
-      return <FileIcon className="w-4 h-4 text-gray-400" />;
-    }
-  };
-
   const convertToFileNodes = (githubFiles: GitHubFile[]): FileNode[] => {
     return githubFiles.map(file => ({
-      id: file.sha,
+      id: file.path, // Use path instead of sha - paths are unique within a repo tree
       name: file.name,
       type: file.type === 'dir' ? 'directory' : 'file'
     }));
@@ -346,21 +321,21 @@ setStreamingAnalysis(data.analysis || '');
   const convertFileToNode = (file: GitHubFile | null): FileNode | null => {
     if (!file) return null;
     return {
-      id: file.sha,
+      id: file.path, // Use path instead of sha - paths are unique within a repo tree
       name: file.name,
       type: file.type === 'dir' ? 'directory' : 'file'
     };
   };
 
   const handleFileNodeClick = (node: FileNode) => {
-    const githubFile = repoContent.find(f => f.sha === node.id);
+    const githubFile = repoContent.find(f => f.path === node.id);
     if (githubFile) {
       handleItemClick(githubFile);
     }
   };
 
   const handleDirToggle = (nodeId: string) => {
-    const dir = repoContent.find(f => f.sha === nodeId);
+    const dir = repoContent.find(f => f.path === nodeId);
     if (dir && dir.type === 'dir') {
       setExpandedDirs(prev => ({
         ...prev,
@@ -370,8 +345,23 @@ setStreamingAnalysis(data.analysis || '');
     }
   };
 
+  const handleGenerateVisualization = (node: FileNode, type: 'flowchart' | 'mindmap') => {
+    // Find the GitHub file
+    const githubFile = repoContent.find(f => f.path === node.id);
+    if (githubFile && githubFile.type === 'file') {
+      // Ensure file is selected and content is loaded
+      if (!selectedFile || selectedFile.path !== githubFile.path) {
+        handleItemClick(githubFile);
+      }
+      // Trigger visualization generation after a short delay to ensure content is loaded
+      setTimeout(() => {
+        setVisualizationTrigger({ type, timestamp: Date.now() });
+      }, 300);
+    }
+  };
+
   const tabs: EditorTab[] = selectedFile ? [{
-    id: selectedFile.sha,
+    id: selectedFile.path, // Use path instead of sha for consistency
     name: selectedFile.name,
     isDirty: false
   }] : [];
@@ -387,84 +377,99 @@ setStreamingAnalysis(data.analysis || '');
     );
   }
 
- return (
-  <IDELayout
-    files={convertToFileNodes(repoContent)}
-    expandedDirs={expandedDirs}
-    onFileClick={handleFileNodeClick}
-    onDirToggle={handleDirToggle}
-    selectedFile={convertFileToNode(selectedFile)}
-    tabs={tabs}
-    activeTabId={selectedFile?.sha || ''}
-    onTabClick={() => {}}
-    onTabClose={() => {
-      setSelectedFile(null);
-      setFileContent('');
-    }}
-    statusBarProps={{
-      language: selectedFile ? getLanguage(selectedFile.name) : 'plaintext',
-      branch: 'main',
-      aiStatus: isAnalyzing ? 'processing' : 'ready'
-    }}
-    // ADD THIS: Analysis panel prop
-    analysisPanel={streamingAnalysis || isAnalyzing ? {
-      content: streamingAnalysis,
-      isAnalyzing: isAnalyzing,
-      onClose: () => {
-        setStreamingAnalysis('');
-        setIsAnalyzing(false);
-      }
-    } : undefined}
-  >
-    <div className="h-full flex flex-col">
-      {/* Error Message */}
-      {error && (
-        <div className="p-3 bg-red-500/20 border border-red-500/50 rounded text-red-300 text-sm mb-4 flex items-center gap-2 mx-4 mt-4">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" />
-          <span>{error}</span>
-        </div>
-      )}
-
-      {/* AI Analysis Button */}
-      <div className="p-4 border-b border-[#30363d]">
-        <button
-          onClick={analyzeRepository}
-          disabled={isAnalyzing || repoContent.length === 0}
-          className="w-full px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 disabled:from-gray-600 disabled:to-gray-600 text-white rounded-lg flex items-center justify-center gap-2 transition-all font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {isAnalyzing ? (
-            <>
-              <Loader2 size={18} className="animate-spin" />
-              Analyzing...
-            </>
-          ) : (
-            <>
-              <Sparkles size={18} />
-              Analyze Repository
-            </>
-          )}
-        </button>
-      </div>
-
-      {/* Main Editor Area */}
-      <div className="flex-1 overflow-hidden">
-        {selectedFile ? (
-          <CodeEditor
-            code={fileContent}
-            language={getLanguage(selectedFile.name)}
-            height="100%"
-            onChange={(newContent) => setFileContent(newContent || '')}
-            readOnly={false}
-          />
-        ) : (
-          <div className="flex items-center justify-center h-full text-center flex-col">
-            <Code className="w-16 h-16 text-[#7d8590] mb-4 opacity-50" />
-            <p className="text-[#7d8590]">No file selected</p>
-            <p className="text-[#7d8590] text-sm mt-2">Select a file from the Explorer to view its contents</p>
+  return (
+    <IDELayout
+      files={convertToFileNodes(repoContent)}
+      expandedDirs={expandedDirs}
+      onFileClick={handleFileNodeClick}
+      onDirToggle={handleDirToggle}
+      selectedFile={convertFileToNode(selectedFile)}
+      tabs={tabs}
+      activeTabId={selectedFile?.path || ''}
+      onTabClick={() => { }}
+      onTabClose={() => {
+        setSelectedFile(null);
+        setFileContent('');
+      }}
+      onGenerateVisualization={handleGenerateVisualization}
+      selectedFileContent={selectedFile ? fileContent : null}
+      statusBarProps={{
+        language: selectedFile ? getLanguage(selectedFile.name) : 'plaintext',
+        branch: 'main',
+        aiStatus: isAnalyzing ? 'processing' : 'ready'
+      }}
+      analysisPanel={streamingAnalysis || isAnalyzing ? {
+        content: streamingAnalysis,
+        isAnalyzing: isAnalyzing,
+        onClose: () => {
+          setStreamingAnalysis('');
+          setIsAnalyzing(false);
+        }
+      } : undefined}
+    >
+      <div className="h-full flex flex-col overflow-hidden">
+        {/* Error Message */}
+        {error && (
+          <div className="p-3 bg-red-500/20 border border-red-500/50 rounded text-red-300 text-sm m-4 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            <span>{error}</span>
           </div>
         )}
+
+        {/* AI Analysis Button Bar */}
+        <div className="p-2 border-b border-[#30363d] bg-[#1c2128]">
+          <button
+            onClick={analyzeRepository}
+            disabled={isAnalyzing || repoContent.length === 0}
+            className="w-full px-4 py-1.5 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 disabled:from-gray-600 disabled:to-gray-600 text-white rounded flex items-center justify-center gap-2 transition-all font-semibold text-xs uppercase tracking-wide disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isAnalyzing ? (
+              <>
+                <Loader2 size={14} className="animate-spin" />
+                Analyzing Repository...
+              </>
+            ) : (
+              <>
+                <Sparkles size={14} />
+                Run AI Repository Analysis
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* --- SPLIT VIEW AREA (Editor + Visualizer) --- */}
+        <div className="flex-1 flex flex-row overflow-hidden">
+          
+          {/* LEFT: Code Editor */}
+          <div className="flex-1 flex flex-col border-r border-[#30363d] min-w-0">
+            {selectedFile ? (
+              <CodeEditor
+                code={fileContent}
+                language={getLanguage(selectedFile.name)}
+                height="100%"
+                onChange={(newContent) => setFileContent(newContent || '')}
+                readOnly={false}
+              />
+            ) : (
+              <div className="flex items-center justify-center h-full text-center flex-col opacity-50">
+                <Code className="w-16 h-16 text-[#7d8590] mb-4" />
+                <p className="text-[#7d8590]">No file selected</p>
+              </div>
+            )}
+          </div>
+
+          {/* RIGHT: Mind Map / Visualization Panel */}
+          {/* Fixed width of 400px (or utilize resizing libraries in future) */}
+          <div className="w-[400px] flex-shrink-0 bg-[#1e1e1e] flex flex-col border-l border-[#30363d]">
+             {/* Pass the ACTIVE file content to the Visualizer */}
+             <MindMapView 
+               selectedFileContent={selectedFile ? fileContent : null} 
+               triggerGeneration={visualizationTrigger}
+             />
+          </div>
+
+        </div>
       </div>
-    </div>
-  </IDELayout>
-);
+    </IDELayout>
+  );
 }
