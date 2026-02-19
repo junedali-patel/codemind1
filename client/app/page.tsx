@@ -237,40 +237,27 @@ export default function HomePage() {
   // Authenticated - show repositories
   return (
     <div className="h-screen bg-[#0d1117] flex flex-col overflow-hidden">
-      {/* NEW NAVBAR: Aligns Logo, Search, and Sign Out */}
+      {/* NEW NAVBAR: Properly aligned with uniform sizing */}
       <nav className="sticky top-0 z-50 w-full border-b border-[#30363d] bg-[#161b22]/95 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-6">
-          <div className="flex h-14 items-center gap-4 md:gap-6 flex-wrap md:flex-nowrap">
+          <div className="flex h-30 items-center justify-between">
             {/* LEFT: Logo & Name */}
-            <div className="flex items-center gap-2 pl-1 flex-shrink-0">
-              <div className="p-1.5 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg shadow-lg shadow-blue-500/20">
+            <div className="flex items-center gap-3 flex-shrink-0">
+              <div className="p-2 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg shadow-lg shadow-blue-500/20">
                 <Brain className="w-5 h-5 text-white" />
               </div>
               <span className="text-lg font-bold text-[#f0f6fc] tracking-tight">CodeMind.AI</span>
             </div>
 
-            {/* CENTER: Search Bar (Moved here for alignment) */}
-            <div className="flex-1 w-full max-w-[360px] sm:max-w-[420px] mx-4">
-              <div className="relative group">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#7d8590] pointer-events-none" />
-                <input
-                  type="text"
-                  placeholder="Search repositories"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full h-10 pl-10 pr-4 bg-[#0d1117] border border-[#30363d] rounded-full 
-                  text-sm text-[#e6edf3] placeholder-[#7d8590]
-                  focus:border-[#2f81f7] focus:outline-none focus:ring-2 focus:ring-[#2f81f7]/40
-                  transition-all"
-                />
-              </div>
-            </div>
-
-            {/* RIGHT: Sign Out Button */}
-            <div className="flex items-center justify-end flex-shrink-0">
+            {/* RIGHT: Search and Sign Out Buttons */}
+            <div className="flex items-center gap-6">
+              <button className="h-10 w-90 px-6 text-sm font-medium bg-[#0d1117] hover:bg-[#1c2128] border border-[#30363d] text-[#e6edf3] rounded-full transition-colors whitespace-nowrap flex items-center justify-center gap-2">
+                <Search className="w-4 h-4" />
+                Search
+              </button>
               <button
                 onClick={handleLogout}
-                className="h-10 px-4 text-sm font-medium bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-400 rounded-full transition-colors whitespace-nowrap"
+                className="h-10 px-6 text-sm font-medium bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-400 rounded-full transition-colors whitespace-nowrap"
               >
                 Sign Out
               </button>
