@@ -127,7 +127,7 @@ export default function HomePage() {
       // Display the actual error message from the server if available
       const errorMessage = error?.message || 'Failed to initiate GitHub login';
       setError(errorMessage.includes('not configured') || errorMessage.includes('required')
-        ? errorMessage 
+        ? errorMessage
         : `Failed to initiate GitHub login: ${errorMessage}`);
       setIsSigningIn(false);
     }
@@ -239,25 +239,29 @@ export default function HomePage() {
     <div className="h-screen bg-[#0d1117] flex flex-col overflow-hidden">
       {/* NEW NAVBAR: Properly aligned with uniform sizing */}
       <nav className="sticky top-0 z-50 w-full border-b border-[#30363d] bg-[#161b22]/95 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="flex h-30 items-center justify-between">
-            {/* LEFT: Logo & Name */}
-            <div className="flex items-center gap-3 flex-shrink-0">
-              <div className="p-2 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg shadow-lg shadow-blue-500/20">
-                <Brain className="w-5 h-5 text-white" />
-              </div>
-              <span className="text-lg font-bold text-[#f0f6fc] tracking-tight">CodeMind.AI</span>
-            </div>
-
-            {/* RIGHT: Search and Sign Out Buttons */}
+        <div className="w-full max-w-[1400px] mx-auto px-6">
+          <div className="flex items-center justify-between h-[60px]">
+            {/* LEFT */}
             <div className="flex items-center gap-6">
-              <button className="h-10 w-90 px-6 text-sm font-medium bg-[#0d1117] hover:bg-[#1c2128] border border-[#30363d] text-[#e6edf3] rounded-full transition-colors whitespace-nowrap flex items-center justify-center gap-2">
-                <Search className="w-4 h-4" />
+              <div className="p-4 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg">
+                <Brain className="w-12 h-12 text-white" />
+              </div>
+              <span className="text-4xl font-bold text-[#f0f6fc] tracking-tight">
+                CodeMind.AI
+              </span>
+            </div>
+            {/* RIGHT */}
+            <div className="flex items-center gap-16">
+              {/* SEARCH */}
+              <button className="flex items-center gap-2 h-[38px] w-[420px] px-8 bg-[#0d1117] hover:bg-[#1c2128] border border-[#30363d] text-[#e6edf3] rounded-full">
+
+                <Search className="w-6 h-6" />
                 Search
               </button>
+              {/* SIGN OUT */}
               <button
                 onClick={handleLogout}
-                className="h-10 px-6 text-sm font-medium bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-400 rounded-full transition-colors whitespace-nowrap"
+                className="h-[38px] w-[97px] px-8 text-xs py-2 bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-400 rounded-full"
               >
                 Sign Out
               </button>
@@ -268,10 +272,22 @@ export default function HomePage() {
 
       {/* MAIN CONTENT AREA */}
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-4xl mx-auto px-6 pt-6 pb-10">
-          <h2 className="text-xl font-semibold text-[#f0f6fc] mb-4">
-            Your repositories
-          </h2>
+        <div className="max-w-8xl mx-auto px-10 pt-8 pb-14">
+          <div className="flex flex-col gap-2">
+
+            <div className="flex items-end gap-4">
+
+              <div className="text-[36px] font-bold text-[#f0f6fc]">
+                Your repositories
+              </div>
+
+              <span className="mb-2 px-3 py-1 text-sm font-medium bg-[#21262d] text-[#e6edf3]/50 rounded-full">
+                {repos.length}
+              </span>
+
+            </div>
+
+          </div>
           {/* Error Message */}
           {error && (
             <div className="mb-6 p-4 bg-red-500/10 border border-red-500/50 rounded-lg text-red-300 text-sm">
@@ -288,7 +304,7 @@ export default function HomePage() {
               </div>
             </div>
           ) : filteredRepos.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-8">
               {filteredRepos.map((repo) => (
                 <button
                   key={repo.id}
