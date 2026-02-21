@@ -1,6 +1,6 @@
 'use client';
 
-import { Send, Loader, Copy } from 'lucide-react';
+import { Send, Loader, Copy, Mic, MicOff } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -11,6 +11,63 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/cjs/styles/prism";
 
 import axios from 'axios';
+
+// TypeScript declarations for Web Speech API
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start(): void;
+  stop(): void;
+  abort(): void;
+  onstart: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onresult: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => any) | null;
+  onerror: ((this: SpeechRecognition, ev: SpeechRecognitionErrorEvent) => any) | null;
+  onend: ((this: SpeechRecognition, ev: Event) => any) | null;
+}
+
+interface SpeechRecognitionEvent extends Event {
+  results: SpeechRecognitionResultList;
+  resultIndex: number;
+}
+
+interface SpeechRecognitionResultList {
+  length: number;
+  item(index: number): SpeechRecognitionResult;
+  [index: number]: SpeechRecognitionResult;
+}
+
+interface SpeechRecognitionResult {
+  length: number;
+  item(index: number): SpeechRecognitionAlternative;
+  [index: number]: SpeechRecognitionAlternative;
+  isFinal: boolean;
+}
+
+interface SpeechRecognitionAlternative {
+  transcript: string;
+  confidence: number;
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+  error: string;
+  message: string;
+}
+
+declare var SpeechRecognition: {
+  prototype: SpeechRecognition;
+  new (): SpeechRecognition;
+};
+
+declare var webkitSpeechRecognition: {
+  prototype: SpeechRecognition;
+  new (): SpeechRecognition;
+};
+
+interface Window {
+  SpeechRecognition: typeof SpeechRecognition;
+  webkitSpeechRecognition: typeof webkitSpeechRecognition;
+}
 
 interface Message {
   id: string;
@@ -33,7 +90,11 @@ export default function AIChatView() {
 
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isListening, setIsListening] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const synthesisRef = useRef<SpeechSynthesis | null>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -43,13 +104,78 @@ export default function AIChatView() {
     scrollToBottom();
   }, [messages]);
 
-  const handleSend = async () => {
-    if (!input.trim()) return;
+  // Initialize Speech Recognition
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const SpeechRecognitionClass = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      
+      if (SpeechRecognitionClass) {
+        const recognition = new SpeechRecognitionClass() as SpeechRecognition;
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = 'en-US';
+
+        recognition.onstart = () => {
+          setIsListening(true);
+        };
+
+        recognition.onresult = (event: SpeechRecognitionEvent) => {
+          const transcript = event.results[0][0].transcript;
+          const finalTranscript = transcript.trim();
+          
+          if (finalTranscript) {
+            // Set the input with the transcribed text
+            setInput(finalTranscript);
+            setIsRecording(false);
+            setIsListening(false);
+            
+            // Automatically send the message after a short delay
+            setTimeout(() => {
+              // Use the handleSend function by setting input and triggering send
+              if (finalTranscript) {
+                handleSendWithText(finalTranscript);
+              }
+            }, 300);
+          } else {
+            setIsRecording(false);
+            setIsListening(false);
+          }
+        };
+
+        recognition.onerror = (event: any) => {
+          console.error('Speech recognition error:', event.error);
+          setIsRecording(false);
+          setIsListening(false);
+        };
+
+        recognition.onend = () => {
+          setIsRecording(false);
+          setIsListening(false);
+        };
+
+        recognitionRef.current = recognition;
+      }
+
+      // Initialize Speech Synthesis
+      if ('speechSynthesis' in window) {
+        synthesisRef.current = window.speechSynthesis;
+      }
+    }
+
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    };
+  }, []);
+
+  const handleSendWithText = async (textToSend: string) => {
+    if (!textToSend.trim()) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: input,
+      content: textToSend,
       timestamp: new Date(),
     };
 
@@ -79,6 +205,9 @@ export default function AIChatView() {
 
       setMessages(prev => [...prev, assistantMessage]);
 
+      // Speak the assistant's response using TTS
+      speakText(assistantText);
+
     } catch (err) {
       setMessages(prev => [
         ...prev,
@@ -94,10 +223,71 @@ export default function AIChatView() {
     }
   };
 
+  const handleSend = async () => {
+    await handleSendWithText(input);
+  };
+
 
   /* ---------- COPY BUTTON FOR CODE BLOCKS ---------- */
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
+  };
+
+  /* ---------- VOICE RECOGNITION FUNCTIONS ---------- */
+  const startVoiceRecognition = () => {
+    if (recognitionRef.current && !isRecording) {
+      try {
+        recognitionRef.current.start();
+        setIsRecording(true);
+      } catch (error) {
+        console.error('Failed to start recognition:', error);
+        setIsRecording(false);
+      }
+    }
+  };
+
+  const stopVoiceRecognition = () => {
+    if (recognitionRef.current && isRecording) {
+      recognitionRef.current.stop();
+      setIsRecording(false);
+      setIsListening(false);
+    }
+  };
+
+  const toggleVoiceRecognition = () => {
+    if (isRecording) {
+      stopVoiceRecognition();
+    } else {
+      startVoiceRecognition();
+    }
+  };
+
+  /* ---------- TEXT-TO-SPEECH FUNCTION ---------- */
+  const speakText = (text: string) => {
+    if (synthesisRef.current) {
+      // Stop any ongoing speech
+      synthesisRef.current.cancel();
+
+      // Remove markdown formatting for cleaner speech
+      const cleanText = text
+        .replace(/```[\s\S]*?```/g, '') // Remove code blocks
+        .replace(/`[^`]+`/g, '') // Remove inline code
+        .replace(/#{1,6}\s+/g, '') // Remove headers
+        .replace(/\*\*([^*]+)\*\*/g, '$1') // Remove bold
+        .replace(/\*([^*]+)\*/g, '$1') // Remove italic
+        .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1') // Remove links
+        .trim();
+
+      if (cleanText) {
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+        utterance.volume = 1.0;
+        utterance.lang = 'en-US';
+        
+        synthesisRef.current.speak(utterance);
+      }
+    }
   };
 
 
@@ -250,9 +440,22 @@ export default function AIChatView() {
           />
 
           <button
+            onClick={toggleVoiceRecognition}
+            disabled={isLoading}
+            className={`px-3 py-2 rounded transition-colors ${
+              isRecording || isListening
+                ? 'bg-red-600 hover:bg-red-700 text-white animate-pulse'
+                : 'bg-gray-600 hover:bg-gray-700 text-white'
+            }`}
+            title={isRecording || isListening ? 'Stop recording' : 'Start voice input'}
+          >
+            {isRecording || isListening ? <MicOff size={16} /> : <Mic size={16} />}
+          </button>
+
+          <button
             onClick={handleSend}
             disabled={!input.trim() || isLoading}
-            className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded"
+            className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Send size={16} />
           </button>
