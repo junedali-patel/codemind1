@@ -341,6 +341,12 @@ async function detectGitRepository(rootPath) {
   }
 }
 
+function createHttpError(status, message) {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+}
+
 async function ensureWorkspaceRepository({ owner, repo, token, rootPath }) {
   const authenticatedUrl = makeAuthenticatedGitUrl(owner, repo, token);
   const hasGitDir = await pathExists(path.join(rootPath, ".git"));
@@ -360,6 +366,98 @@ async function ensureWorkspaceRepository({ owner, repo, token, rootPath }) {
   await runGit(["checkout", targetBranch], rootPath);
   await runGit(["pull", "--ff-only", "origin", targetBranch], rootPath).catch(() => {});
   return getCurrentBranch(rootPath);
+}
+
+async function openLocalWorkspaceSession({
+  approvedRoots,
+  rootId,
+  relativePath = "",
+  absolutePath,
+  confirm,
+}) {
+  if (!Array.isArray(approvedRoots) || approvedRoots.length === 0) {
+    throw createHttpError(500, "No approved local roots configured");
+  }
+
+  let normalizedTargetPath = "";
+  let approvedRootId = null;
+
+  if (absolutePath) {
+    if (!confirm) {
+      throw createHttpError(400, "confirm=true is required with absolutePath");
+    }
+
+    const validation = await resolveApprovedAbsolutePath(absolutePath, approvedRoots);
+    if (!validation.valid) {
+      throw createHttpError(400, validation.reason || "Path is outside approved roots");
+    }
+
+    normalizedTargetPath = validation.normalizedPath;
+    approvedRootId = validation.rootId;
+  } else {
+    if (!rootId) {
+      throw createHttpError(400, "rootId is required when absolutePath is not provided");
+    }
+
+    const browseContext = await resolveBrowsePath({
+      rootId,
+      relativePath,
+      approvedRoots,
+    });
+    normalizedTargetPath = browseContext.targetPath;
+    approvedRootId = browseContext.root.id;
+  }
+
+  const localWorkspaceKey = makeLocalWorkspaceKey(normalizedTargetPath);
+  const existingSession = getWorkspaceSessionByKey(localWorkspaceKey);
+  if (existingSession && (await pathExists(existingSession.rootPath))) {
+    existingSession.kind = "local";
+    existingSession.provider = "local";
+    existingSession.approvedRootId = approvedRootId;
+    existingSession.displayName = path.basename(existingSession.rootPath) || existingSession.rootPath;
+    existingSession.isGitRepo = await detectGitRepository(existingSession.rootPath);
+    existingSession.branch = existingSession.isGitRepo
+      ? await getCurrentBranch(existingSession.rootPath)
+      : "";
+
+    return {
+      sessionId: existingSession.id,
+      kind: existingSession.kind,
+      provider: existingSession.provider,
+      displayName: existingSession.displayName,
+      rootPath: existingSession.rootPath,
+      branch: existingSession.branch,
+      isGitRepo: existingSession.isGitRepo,
+    };
+  }
+
+  const isGitRepo = await detectGitRepository(normalizedTargetPath);
+  const branch = isGitRepo ? await getCurrentBranch(normalizedTargetPath) : "";
+  const displayName = path.basename(normalizedTargetPath) || normalizedTargetPath;
+
+  const localSession = upsertWorkspaceSession({
+    owner: "local",
+    repo: displayName,
+    token: null,
+    key: localWorkspaceKey,
+    rootPath: normalizedTargetPath,
+    branch,
+    kind: "local",
+    provider: "local",
+    displayName,
+    isGitRepo,
+    approvedRootId,
+  });
+
+  return {
+    sessionId: localSession.id,
+    kind: localSession.kind,
+    provider: localSession.provider,
+    displayName: localSession.displayName,
+    rootPath: localSession.rootPath,
+    branch: localSession.branch,
+    isGitRepo: localSession.isGitRepo,
+  };
 }
 
 async function buildTree(rootPath, absoluteDir, maxDepth, depth = 0) {
@@ -666,102 +764,52 @@ router.post("/local-picker", async (_req, res) => {
   }
 });
 
+router.post("/open-local-picker", async (_req, res) => {
+  try {
+    const picker = await pickLocalFolderNative();
+    if (!picker.supported || picker.canceled || !picker.absolutePath) {
+      return res.json({
+        ...picker,
+        opened: false,
+      });
+    }
+
+    const approvedRoots = loadApprovedRoots();
+    const workspace = await openLocalWorkspaceSession({
+      approvedRoots,
+      absolutePath: picker.absolutePath,
+      confirm: true,
+    });
+
+    return res.json({
+      ...picker,
+      opened: true,
+      ...workspace,
+    });
+  } catch (error) {
+    return res.status(error.status || 500).json({
+      error: error.status === 400 ? "Invalid local workspace path" : "Failed to open local workspace from picker",
+      details: error.message,
+    });
+  }
+});
+
 router.post("/open-local", async (req, res) => {
   try {
     const { rootId, relativePath = "", absolutePath, confirm } = req.body || {};
     const approvedRoots = loadApprovedRoots();
-
-    if (!Array.isArray(approvedRoots) || approvedRoots.length === 0) {
-      return res.status(500).json({
-        error: "No approved local roots configured",
-      });
-    }
-
-    let normalizedTargetPath = "";
-    let approvedRootId = null;
-
-    if (absolutePath) {
-      if (!confirm) {
-        return res.status(400).json({ error: "confirm=true is required with absolutePath" });
-      }
-
-      const validation = await resolveApprovedAbsolutePath(absolutePath, approvedRoots);
-      if (!validation.valid) {
-        return res.status(400).json({
-          error: "Path is outside approved roots",
-          details: validation.reason || "Path rejected",
-        });
-      }
-
-      normalizedTargetPath = validation.normalizedPath;
-      approvedRootId = validation.rootId;
-    } else {
-      if (!rootId) {
-        return res.status(400).json({ error: "rootId is required when absolutePath is not provided" });
-      }
-
-      const browseContext = await resolveBrowsePath({
-        rootId,
-        relativePath,
-        approvedRoots,
-      });
-      normalizedTargetPath = browseContext.targetPath;
-      approvedRootId = browseContext.root.id;
-    }
-
-    const localWorkspaceKey = makeLocalWorkspaceKey(normalizedTargetPath);
-    const existingSession = getWorkspaceSessionByKey(localWorkspaceKey);
-    if (existingSession && (await pathExists(existingSession.rootPath))) {
-      existingSession.kind = "local";
-      existingSession.provider = "local";
-      existingSession.approvedRootId = approvedRootId;
-      existingSession.displayName = path.basename(existingSession.rootPath) || existingSession.rootPath;
-      existingSession.isGitRepo = await detectGitRepository(existingSession.rootPath);
-      existingSession.branch = existingSession.isGitRepo
-        ? await getCurrentBranch(existingSession.rootPath)
-        : "";
-
-      return res.json({
-        sessionId: existingSession.id,
-        kind: existingSession.kind,
-        provider: existingSession.provider,
-        displayName: existingSession.displayName,
-        rootPath: existingSession.rootPath,
-        branch: existingSession.branch,
-        isGitRepo: existingSession.isGitRepo,
-      });
-    }
-
-    const isGitRepo = await detectGitRepository(normalizedTargetPath);
-    const branch = isGitRepo ? await getCurrentBranch(normalizedTargetPath) : "";
-    const displayName = path.basename(normalizedTargetPath) || normalizedTargetPath;
-
-    const localSession = upsertWorkspaceSession({
-      owner: "local",
-      repo: displayName,
-      token: null,
-      key: localWorkspaceKey,
-      rootPath: normalizedTargetPath,
-      branch,
-      kind: "local",
-      provider: "local",
-      displayName,
-      isGitRepo,
-      approvedRootId,
+    const workspace = await openLocalWorkspaceSession({
+      approvedRoots,
+      rootId,
+      relativePath,
+      absolutePath,
+      confirm,
     });
 
-    return res.json({
-      sessionId: localSession.id,
-      kind: localSession.kind,
-      provider: localSession.provider,
-      displayName: localSession.displayName,
-      rootPath: localSession.rootPath,
-      branch: localSession.branch,
-      isGitRepo: localSession.isGitRepo,
-    });
+    return res.json(workspace);
   } catch (error) {
-    return res.status(500).json({
-      error: "Failed to open local workspace",
+    return res.status(error.status || 500).json({
+      error: error.status === 400 ? "Invalid local workspace path" : "Failed to open local workspace",
       details: error.message,
     });
   }

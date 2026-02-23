@@ -72,6 +72,14 @@ interface LocalPickerPayload {
   supported: boolean;
   canceled: boolean;
   absolutePath: string | null;
+  opened?: boolean;
+  sessionId?: string;
+  kind?: 'local' | 'repo';
+  provider?: string;
+  displayName?: string;
+  rootPath?: string;
+  branch?: string;
+  isGitRepo?: boolean;
   reason?: string;
 }
 
@@ -318,26 +326,10 @@ export default function HomePage() {
     try {
       setIsOpeningLocal(true);
       setError('');
-      const validation = await requestJson<{
-        valid: boolean;
-        reason?: string | null;
-        normalizedPath?: string | null;
-      }>(`${API_BASE_URL}/api/workspace/validate-local-path`, {
-        method: 'POST',
-        body: JSON.stringify({ absolutePath: normalizedPath }),
-      });
-
-      if (!validation.valid) {
-        const message = validation.reason || 'Path is outside approved roots.';
-        setManualValidationMessage(message);
-        setError(message);
-        return;
-      }
-
       const payload = await requestJson<LocalOpenPayload>(`${API_BASE_URL}/api/workspace/open-local`, {
         method: 'POST',
         body: JSON.stringify({
-          absolutePath: validation.normalizedPath || normalizedPath,
+          absolutePath: normalizedPath,
           confirm: true,
         }),
       });
@@ -364,21 +356,27 @@ export default function HomePage() {
     setIsPickingLocalFolder(true);
 
     try {
-      const picker = await requestJson<LocalPickerPayload>(`${API_BASE_URL}/api/workspace/local-picker`, {
+      const picker = await requestJson<LocalPickerPayload>(`${API_BASE_URL}/api/workspace/open-local-picker`, {
         method: 'POST',
       });
 
-      if (picker.supported && picker.canceled) {
+      if (picker.canceled) {
         return;
       }
 
-      if (picker.supported && picker.absolutePath) {
-        await openLocalWorkspaceByAbsolutePath(picker.absolutePath);
+      if (picker.supported && picker.opened && picker.sessionId && picker.rootPath) {
+        saveRecentLocalPath(picker.rootPath);
+        setRecentLocalPaths(loadRecentLocalPaths());
+        setShowFolderModal(false);
+        setManualValidationMessage('');
+        setError('');
+        router.push(`/workspace/${encodeURIComponent(picker.sessionId)}`);
         return;
       }
 
       await handleOpenFolderModal();
-    } catch {
+    } catch (pickerError) {
+      setError(getErrorMessage(pickerError, 'Could not open native folder picker.'));
       await handleOpenFolderModal();
     } finally {
       setIsPickingLocalFolder(false);
