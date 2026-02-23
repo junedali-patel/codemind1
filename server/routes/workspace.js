@@ -141,6 +141,164 @@ async function runGit(args, cwd) {
   return result.stdout;
 }
 
+function isPickerCanceled(message) {
+  const input = String(message || "").toLowerCase();
+  return (
+    input.includes("user canceled") ||
+    input.includes("user cancelled") ||
+    input.includes("dialogresult.cancel") ||
+    input.includes("(-128)")
+  );
+}
+
+function isCommandUnavailable(message) {
+  const input = String(message || "").toLowerCase();
+  return (
+    input.includes("enoent") ||
+    input.includes("not found") ||
+    input.includes("is not recognized")
+  );
+}
+
+function normalizePickedPath(rawPath) {
+  return String(rawPath || "")
+    .trim()
+    .replace(/\r/g, "")
+    .replace(/\/+$/, "");
+}
+
+async function pickLocalFolderNative() {
+  if (process.platform === "darwin") {
+    const result = await spawnCommand("osascript", [
+      "-e",
+      'POSIX path of (choose folder with prompt "Select a local project folder for CodeMind")',
+    ]);
+
+    if (result.code !== 0) {
+      const details = result.stderr || result.stdout;
+      if (isPickerCanceled(details)) {
+        return { supported: true, canceled: true, absolutePath: null };
+      }
+      if (isCommandUnavailable(details)) {
+        return {
+          supported: false,
+          canceled: false,
+          absolutePath: null,
+          reason: "osascript unavailable",
+        };
+      }
+      throw new Error(details || "Failed to open native folder picker");
+    }
+
+    const absolutePath = normalizePickedPath(result.stdout);
+    if (!absolutePath) {
+      return { supported: true, canceled: true, absolutePath: null };
+    }
+    return { supported: true, canceled: false, absolutePath };
+  }
+
+  if (process.platform === "win32") {
+    const psScript = [
+      "Add-Type -AssemblyName System.Windows.Forms",
+      "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog",
+      '$dialog.Description = "Select a local project folder for CodeMind"',
+      "$dialog.ShowNewFolderButton = $false",
+      "$result = $dialog.ShowDialog()",
+      "if ($result -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dialog.SelectedPath }",
+    ].join("; ");
+
+    const result = await spawnCommand("powershell.exe", [
+      "-NoProfile",
+      "-STA",
+      "-Command",
+      psScript,
+    ]);
+
+    if (result.code !== 0) {
+      const details = result.stderr || result.stdout;
+      if (isPickerCanceled(details)) {
+        return { supported: true, canceled: true, absolutePath: null };
+      }
+      if (isCommandUnavailable(details)) {
+        return {
+          supported: false,
+          canceled: false,
+          absolutePath: null,
+          reason: "powershell unavailable",
+        };
+      }
+      throw new Error(details || "Failed to open native folder picker");
+    }
+
+    const absolutePath = normalizePickedPath(result.stdout);
+    if (!absolutePath) {
+      return { supported: true, canceled: true, absolutePath: null };
+    }
+    return { supported: true, canceled: false, absolutePath };
+  }
+
+  if (process.platform === "linux") {
+    const zenityResult = await spawnCommand("zenity", [
+      "--file-selection",
+      "--directory",
+      "--title=Select a local project folder for CodeMind",
+    ]);
+
+    if (zenityResult.code === 0) {
+      const absolutePath = normalizePickedPath(zenityResult.stdout);
+      if (!absolutePath) {
+        return { supported: true, canceled: true, absolutePath: null };
+      }
+      return { supported: true, canceled: false, absolutePath };
+    }
+
+    const zenityDetails = zenityResult.stderr || zenityResult.stdout;
+    if (isPickerCanceled(zenityDetails)) {
+      return { supported: true, canceled: true, absolutePath: null };
+    }
+
+    if (!isCommandUnavailable(zenityDetails)) {
+      throw new Error(zenityDetails || "Failed to open native folder picker");
+    }
+
+    const kdialogResult = await spawnCommand("kdialog", [
+      "--getexistingdirectory",
+      os.homedir(),
+      "--title",
+      "Select a local project folder for CodeMind",
+    ]);
+
+    if (kdialogResult.code !== 0) {
+      const kdialogDetails = kdialogResult.stderr || kdialogResult.stdout;
+      if (isPickerCanceled(kdialogDetails)) {
+        return { supported: true, canceled: true, absolutePath: null };
+      }
+      if (isCommandUnavailable(kdialogDetails)) {
+        return {
+          supported: false,
+          canceled: false,
+          absolutePath: null,
+          reason: "No native picker available (zenity/kdialog not found)",
+        };
+      }
+      throw new Error(kdialogDetails || "Failed to open native folder picker");
+    }
+
+    const absolutePath = normalizePickedPath(kdialogResult.stdout);
+    if (!absolutePath) {
+      return { supported: true, canceled: true, absolutePath: null };
+    }
+    return { supported: true, canceled: false, absolutePath };
+  }
+
+  return {
+    supported: false,
+    canceled: false,
+    absolutePath: null,
+    reason: `Unsupported platform: ${process.platform}`,
+  };
+}
+
 async function pathExists(targetPath) {
   try {
     await fsp.access(targetPath);
@@ -491,6 +649,18 @@ router.post("/local-browse", async (req, res) => {
   } catch (error) {
     return res.status(400).json({
       error: "Failed to browse local path",
+      details: error.message,
+    });
+  }
+});
+
+router.post("/local-picker", async (_req, res) => {
+  try {
+    const picker = await pickLocalFolderNative();
+    return res.json(picker);
+  } catch (error) {
+    return res.status(500).json({
+      error: "Failed to open native folder picker",
       details: error.message,
     });
   }

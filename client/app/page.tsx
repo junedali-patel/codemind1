@@ -68,6 +68,13 @@ interface LocalOpenPayload {
   isGitRepo: boolean;
 }
 
+interface LocalPickerPayload {
+  supported: boolean;
+  canceled: boolean;
+  absolutePath: string | null;
+  reason?: string;
+}
+
 interface WorkspaceOpenPayload {
   sessionId: string;
   kind?: 'repo' | 'local';
@@ -146,6 +153,7 @@ export default function HomePage() {
   const [showFolderModal, setShowFolderModal] = useState(false);
   const [folderModalTab, setFolderModalTab] = useState<FolderModalTab>('browse');
   const [isOpeningLocal, setIsOpeningLocal] = useState(false);
+  const [isPickingLocalFolder, setIsPickingLocalFolder] = useState(false);
   const [localRoots, setLocalRoots] = useState<LocalRoot[]>([]);
   const [selectedRootId, setSelectedRootId] = useState('');
   const [browseRelativePath, setBrowseRelativePath] = useState('');
@@ -301,12 +309,15 @@ export default function HomePage() {
   const openLocalWorkspaceByAbsolutePath = async (absolutePath: string) => {
     const normalizedPath = absolutePath.trim();
     if (!normalizedPath) {
-      setManualValidationMessage('Please enter a local folder path.');
+      const message = 'Please enter a local folder path.';
+      setManualValidationMessage(message);
+      setError(message);
       return;
     }
 
     try {
       setIsOpeningLocal(true);
+      setError('');
       const validation = await requestJson<{
         valid: boolean;
         reason?: string | null;
@@ -317,7 +328,9 @@ export default function HomePage() {
       });
 
       if (!validation.valid) {
-        setManualValidationMessage(validation.reason || 'Path is outside approved roots.');
+        const message = validation.reason || 'Path is outside approved roots.';
+        setManualValidationMessage(message);
+        setError(message);
         return;
       }
 
@@ -333,11 +346,42 @@ export default function HomePage() {
       setRecentLocalPaths(loadRecentLocalPaths());
       setShowFolderModal(false);
       setManualValidationMessage('');
+      setError('');
       router.push(`/workspace/${encodeURIComponent(payload.sessionId)}`);
     } catch (openError) {
-      setManualValidationMessage(getErrorMessage(openError, 'Failed to open local workspace.'));
+      const message = getErrorMessage(openError, 'Failed to open local workspace.');
+      setManualValidationMessage(message);
+      setError(message);
     } finally {
       setIsOpeningLocal(false);
+    }
+  };
+
+  const handleOpenFolder = async () => {
+    setError('');
+    setManualValidationMessage('');
+    setRecentLocalPaths(loadRecentLocalPaths());
+    setIsPickingLocalFolder(true);
+
+    try {
+      const picker = await requestJson<LocalPickerPayload>(`${API_BASE_URL}/api/workspace/local-picker`, {
+        method: 'POST',
+      });
+
+      if (picker.supported && picker.canceled) {
+        return;
+      }
+
+      if (picker.supported && picker.absolutePath) {
+        await openLocalWorkspaceByAbsolutePath(picker.absolutePath);
+        return;
+      }
+
+      await handleOpenFolderModal();
+    } catch {
+      await handleOpenFolderModal();
+    } finally {
+      setIsPickingLocalFolder(false);
     }
   };
 
@@ -499,15 +543,22 @@ export default function HomePage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-6">
                   <button
-                    onClick={handleOpenFolderModal}
-                    className="cm-card rounded-xl p-5 text-left hover:border-[var(--cm-primary)]/60 transition-all"
+                    onClick={() => void handleOpenFolder()}
+                    disabled={isPickingLocalFolder}
+                    className="cm-card rounded-xl p-5 text-left hover:border-[var(--cm-primary)]/60 transition-all disabled:opacity-80 disabled:cursor-wait"
                   >
                     <div className="flex items-center gap-3 mb-3">
-                      <FolderOpen className="w-5 h-5 text-[var(--cm-primary)]" />
-                      <h3 className="text-base font-semibold text-slate-100">Open Folder</h3>
+                      {isPickingLocalFolder ? (
+                        <Loader2 className="w-5 h-5 text-[var(--cm-primary)] animate-spin" />
+                      ) : (
+                        <FolderOpen className="w-5 h-5 text-[var(--cm-primary)]" />
+                      )}
+                      <h3 className="text-base font-semibold text-slate-100">
+                        {isPickingLocalFolder ? 'Opening Finder / Explorer...' : 'Open Folder'}
+                      </h3>
                     </div>
                     <p className="text-sm text-[var(--cm-text-muted)]">
-                      Browse approved local roots or enter an absolute path to open local projects.
+                      Open Finder/File Explorer directly. If unavailable, fallback to in-app folder browser.
                     </p>
                   </button>
 

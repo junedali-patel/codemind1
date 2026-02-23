@@ -62,6 +62,7 @@ app.use((req, res) => {
       "POST /api/workspace/open-local",
       "POST /api/workspace/open",
       "GET /api/workspace/local-roots",
+      "POST /api/workspace/local-picker",
       "POST /api/workspace/local-browse",
       "POST /api/workspace/validate-local-path",
       "GET /api/workspace/:sessionId/meta",
