@@ -1,20 +1,81 @@
 'use client';
 
-import { useState, ReactNode } from 'react';
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ActivityBar from './ActivityBar';
 import Sidebar from './Sidebar';
 import StatusBar from './StatusBar';
-import Panel from './Panel';
+import Panel, { PanelProblem, PanelTab } from './Panel';
 import EditorTabs, { EditorTab } from './EditorTabs';
 import AIChatView from '../views/AIChatView';
 import ExplorerView, { FileNode } from '../views/ExplorerView';
-import SearchView from '../views/SearchView';
-import GitView from '../views/GitView';
+import SearchView, { SearchMatch } from '../views/SearchView';
+import GitView, { GitStatusPayload } from '../views/GitView';
 import MindMapView from '../views/MindMapView';
 import SettingsView from '../views/SettingsView';
+import ExtensionsView from '../views/ExtensionsView';
+
+export type SidebarView = 'explorer' | 'search' | 'git' | 'run' | 'mindmap' | 'extensions' | 'settings';
+
+export interface SidebarState {
+  visible: boolean;
+  width: number;
+  activeView: SidebarView;
+}
+
+export interface PanelState {
+  visible: boolean;
+  height: number;
+  activeTab: PanelTab;
+}
+
+interface SearchViewConfig {
+  query: string;
+  isSearching?: boolean;
+  results: SearchMatch[];
+  onQueryChange: (value: string) => void;
+  onSearch: (query: string) => void;
+  onSelectResult: (result: SearchMatch) => void;
+}
+
+interface GitViewConfig {
+  status: GitStatusPayload | null;
+  commitMessage: string;
+  isBusy?: boolean;
+  onCommitMessageChange: (value: string) => void;
+  onStageAll: () => void;
+  onStageFile: (path: string) => void;
+  onCommit: () => void;
+  onPush: () => void;
+  onSync: () => void;
+}
+
+interface ExtensionsViewConfig {
+  workspaceSessionId?: string;
+}
+
+interface PanelContent {
+  problems?: PanelProblem[];
+  outputLines?: string[];
+  debugLines?: string[];
+  terminalLines?: string[];
+  terminalConnected?: boolean;
+  terminalInput?: string;
+  onTerminalInputChange?: (value: string) => void;
+  onTerminalSubmit?: () => void;
+  terminalTabs?: Array<{
+    id: string;
+    name: string;
+    connected: boolean;
+  }>;
+  activeTerminalId?: string;
+  onTerminalTabSelect?: (terminalId: string) => void;
+  onTerminalCreate?: () => void;
+  onTerminalClose?: (terminalId: string) => void;
+}
 
 interface IDELayoutProps {
   children?: ReactNode;
+  headerContent?: ReactNode;
   files?: FileNode[];
   expandedDirs?: Record<string, boolean>;
   onFileClick?: (file: FileNode) => void;
@@ -26,25 +87,58 @@ interface IDELayoutProps {
   onTabClose?: (tabId: string) => void;
   onGenerateVisualization?: (file: FileNode, type: 'flowchart' | 'mindmap') => void;
   selectedFileContent?: string | null;
-
-  // Analysis panel
   analysisPanel?: {
     content: string;
     isAnalyzing?: boolean;
     onClose: () => void;
   };
-
   statusBarProps?: {
     line?: number;
     column?: number;
     language?: string;
     branch?: string;
     aiStatus?: 'idle' | 'processing' | 'ready';
+    workspaceKind?: 'repo' | 'local';
+    terminalCount?: number;
+    extensionHostStatus?: 'off' | 'running' | 'error';
   };
+  sidebarState?: SidebarState;
+  onSidebarStateChange?: (state: SidebarState) => void;
+  onSidebarResize?: (width: number) => void;
+  panelState?: PanelState;
+  onPanelStateChange?: (state: PanelState) => void;
+  onPanelResize?: (height: number) => void;
+  searchViewProps?: SearchViewConfig;
+  gitViewProps?: GitViewConfig;
+  extensionsViewProps?: ExtensionsViewConfig;
+  panelContent?: PanelContent;
+}
+
+const SIDEBAR_MIN_WIDTH = 220;
+const SIDEBAR_MAX_WIDTH = 520;
+const PANEL_MIN_HEIGHT = 140;
+
+const DEFAULT_SIDEBAR_STATE: SidebarState = {
+  visible: true,
+  width: 280,
+  activeView: 'explorer',
+};
+
+const DEFAULT_PANEL_STATE: PanelState = {
+  visible: true,
+  height: 220,
+  activeTab: 'problems',
+};
+
+const ALL_SIDEBAR_VIEWS: SidebarView[] = ['explorer', 'search', 'git', 'run', 'mindmap', 'extensions', 'settings'];
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
 }
 
 export default function IDELayout({
   children,
+  headerContent,
   files = [],
   expandedDirs = {},
   onFileClick = () => {},
@@ -57,29 +151,123 @@ export default function IDELayout({
   onGenerateVisualization,
   selectedFileContent = null,
   analysisPanel,
-  statusBarProps = {}
+  statusBarProps = {},
+  sidebarState: sidebarStateProp,
+  onSidebarStateChange,
+  onSidebarResize,
+  panelState: panelStateProp,
+  onPanelStateChange,
+  onPanelResize,
+  searchViewProps,
+  gitViewProps,
+  extensionsViewProps,
+  panelContent,
 }: IDELayoutProps) {
-  const [activeView, setActiveView] = useState<string>('explorer');
-  const [showSidebar, setShowSidebar] = useState(true);
-
-  // Right side AI panel
   const [showAI, setShowAI] = useState(false);
+  const [internalSidebarState, setInternalSidebarState] = useState<SidebarState>(
+    sidebarStateProp ?? DEFAULT_SIDEBAR_STATE
+  );
+  const [internalPanelState, setInternalPanelState] = useState<PanelState>(
+    panelStateProp ?? DEFAULT_PANEL_STATE
+  );
 
-  // Show analysis panel above terminal
-  const shouldShowAnalysisPanel =
-    !!(analysisPanel && (analysisPanel.content || analysisPanel.isAnalyzing));
+  const sidebarState = sidebarStateProp ?? internalSidebarState;
+  const panelState = panelStateProp ?? internalPanelState;
+
+  const setSidebarState = useCallback((nextState: SidebarState) => {
+    if (onSidebarStateChange) {
+      onSidebarStateChange(nextState);
+      return;
+    }
+    setInternalSidebarState(nextState);
+  }, [onSidebarStateChange]);
+
+  const setPanelState = useCallback((nextState: PanelState) => {
+    if (onPanelStateChange) {
+      onPanelStateChange(nextState);
+      return;
+    }
+    setInternalPanelState(nextState);
+  }, [onPanelStateChange]);
+
+  const sidebarWidth = clamp(sidebarState.width || DEFAULT_SIDEBAR_STATE.width, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH);
+  const panelHeight = clamp(
+    panelState.height || DEFAULT_PANEL_STATE.height,
+    PANEL_MIN_HEIGHT,
+    Math.max(PANEL_MIN_HEIGHT, Math.round((typeof window !== 'undefined' ? window.innerHeight : 900) * 0.75))
+  );
+
+  const resizeRef = useRef<
+    | {
+        type: 'sidebar' | 'panel';
+        startX: number;
+        startY: number;
+        initialSize: number;
+      }
+    | null
+  >(null);
+
+  useEffect(() => {
+    const onMouseMove = (event: MouseEvent) => {
+      if (!resizeRef.current) return;
+
+      if (resizeRef.current.type === 'sidebar') {
+        const nextWidth = clamp(
+          resizeRef.current.initialSize + (event.clientX - resizeRef.current.startX),
+          SIDEBAR_MIN_WIDTH,
+          SIDEBAR_MAX_WIDTH
+        );
+
+        setSidebarState({ ...sidebarState, visible: true, width: nextWidth });
+        onSidebarResize?.(nextWidth);
+        return;
+      }
+
+      const maxHeight = Math.max(PANEL_MIN_HEIGHT, Math.round(window.innerHeight * 0.75));
+      const nextHeight = clamp(
+        resizeRef.current.initialSize + (resizeRef.current.startY - event.clientY),
+        PANEL_MIN_HEIGHT,
+        maxHeight
+      );
+
+      setPanelState({ ...panelState, visible: true, height: nextHeight });
+      onPanelResize?.(nextHeight);
+    };
+
+    const onMouseUp = () => {
+      resizeRef.current = null;
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+  }, [onPanelResize, onSidebarResize, panelState, setPanelState, setSidebarState, sidebarState]);
+
+  const shouldShowAnalysisPanel = !!(analysisPanel && (analysisPanel.content || analysisPanel.isAnalyzing));
 
   const handleActivityChange = (view: string) => {
     if (view === 'ai') {
-      setShowAI(prev => !prev);
+      setShowAI((previous) => !previous);
       return;
     }
-    setActiveView(view);
-    setShowSidebar(true);
+
+    if (!ALL_SIDEBAR_VIEWS.includes(view as SidebarView)) {
+      return;
+    }
+
+    setSidebarState({
+      ...sidebarState,
+      visible: true,
+      activeView: view as SidebarView,
+    });
   };
 
   const renderSidebarContent = () => {
-    switch (activeView) {
+    switch (sidebarState.activeView) {
       case 'explorer':
         return (
           <ExplorerView
@@ -92,17 +280,37 @@ export default function IDELayout({
           />
         );
       case 'search':
-        return <SearchView />;
+        if (!searchViewProps) {
+          return (
+            <div className="p-4 text-sm text-[var(--cm-text-muted)] text-center">
+              Search is unavailable for this workspace.
+            </div>
+          );
+        }
+        return <SearchView {...searchViewProps} />;
       case 'git':
-        return <GitView />;
+        if (!gitViewProps) {
+          return (
+            <div className="p-4 text-sm text-[var(--cm-text-muted)] text-center">
+              Source control is unavailable for this workspace.
+            </div>
+          );
+        }
+        return <GitView {...gitViewProps} />;
+      case 'run':
+        return (
+          <div className="p-4 text-sm text-[var(--cm-text-muted)]">
+            <p className="mb-2 text-[var(--cm-text)] font-medium">Run and Debug</p>
+            <p className="leading-6">
+              Use the terminal panel for runtime commands and the Debug Console tab for logs. Debug adapter
+              integrations can be added in the next phase.
+            </p>
+          </div>
+        );
       case 'mindmap':
         return <MindMapView selectedFileContent={selectedFileContent} />;
       case 'extensions':
-        return (
-          <div className="p-3 text-sm text-[#858585] text-center">
-            Extensions coming soon.
-          </div>
-        );
+        return <ExtensionsView workspaceSessionId={extensionsViewProps?.workspaceSessionId} />;
       case 'settings':
         return <SettingsView />;
       default:
@@ -110,46 +318,60 @@ export default function IDELayout({
     }
   };
 
-  const getSidebarTitle = () => {
-    switch (activeView) {
-      case 'explorer': return 'Explorer';
-      case 'search': return 'Search';
-      case 'git': return 'Source Control';
-      case 'mindmap': return 'Mind Map';
-      case 'settings': return 'Settings';
-      case 'extensions': return 'Extensions';
-      default: return '';
+  const sidebarTitle = useMemo(() => {
+    switch (sidebarState.activeView) {
+      case 'explorer':
+        return 'Explorer';
+      case 'search':
+        return 'Search';
+      case 'git':
+        return 'Source Control';
+      case 'run':
+        return 'Run and Debug';
+      case 'mindmap':
+        return 'Code Visualization';
+      case 'settings':
+        return 'Settings';
+      case 'extensions':
+        return 'Extensions';
+      default:
+        return '';
     }
-  };
+  }, [sidebarState.activeView]);
 
   return (
-    <div className="h-screen flex flex-col bg-[#1e1e1e] text-[#ccc] overflow-hidden">
+    <div className="h-screen flex flex-col cm-shell overflow-hidden">
+      <div className="flex-1 flex overflow-hidden min-h-0">
+        <ActivityBar activeView={showAI ? 'ai' : sidebarState.activeView} onViewChange={handleActivityChange} />
 
-      <div className="flex-1 flex overflow-hidden relative">
-
-        {/* ACTIVITY BAR */}
-        <ActivityBar
-          activeView={showAI ? 'ai' : activeView}
-          onViewChange={handleActivityChange}
-        />
-
-        {/* LEFT SIDEBAR */}
-        {showSidebar && (
-          <Sidebar
-            title={getSidebarTitle()}
-            width={activeView === 'mindmap' ? 400 : 250}
-            onClose={() => setShowSidebar(false)}
-          >
-            <div className="h-full overflow-hidden">
-              {renderSidebarContent()}
-            </div>
-          </Sidebar>
+        {sidebarState.visible && (
+          <>
+            <Sidebar
+              title={sidebarTitle}
+              width={sidebarWidth}
+              onClose={() => setSidebarState({ ...sidebarState, visible: false })}
+            >
+              <div className="h-full overflow-hidden">{renderSidebarContent()}</div>
+            </Sidebar>
+            <div
+              role="separator"
+              aria-label="Resize sidebar"
+              className="w-[3px] bg-transparent hover:bg-[rgba(79,142,247,0.35)] cursor-col-resize transition-colors"
+              onMouseDown={(event) => {
+                resizeRef.current = {
+                  type: 'sidebar',
+                  startX: event.clientX,
+                  startY: event.clientY,
+                  initialSize: sidebarWidth,
+                };
+              }}
+            />
+          </>
         )}
 
-        {/* CENTER AREA */}
-        <div className="flex-1 flex flex-col overflow-hidden min-w-0"> {/* min-w-0 fixes flex child overflow issues */}
+        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+          {headerContent}
 
-          {/* Editor Tabs */}
           {tabs.length > 0 && (
             <EditorTabs
               tabs={tabs}
@@ -159,68 +381,96 @@ export default function IDELayout({
             />
           )}
 
-          {/* Editor */}
-          <div className="flex-1 overflow-hidden relative">
-            {children}
-          </div>
+          <div className="flex-1 overflow-hidden relative">{children}</div>
 
-          {/* ANALYSIS PANEL ABOVE TERMINAL */}
           {shouldShowAnalysisPanel && (
-            <div
-              className="border-t border-[#333] bg-[#1e1e1e]"
-              style={{ minHeight: 130, maxHeight: '45vh', display: 'flex', flexDirection: 'column' }}
+            <section
+              className="border-t border-[var(--cm-border)] cm-panel flex flex-col"
+              style={{ minHeight: 130, maxHeight: '45vh' }}
             >
-              <div className="flex items-center justify-between px-4 py-2 border-b border-[#333] bg-[#252526]">
-                <span className="text-sm font-semibold text-[#ccc]">AI Analysis</span>
-
+              <div className="h-8 px-3 border-b border-[var(--cm-border)] flex items-center justify-between bg-[rgba(12,18,28,0.92)]">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.09em] text-[var(--cm-text)]">
+                  AI Analysis
+                </span>
                 <button
                   onClick={analysisPanel?.onClose}
-                  className="text-[#888] hover:text-[#fff]"
+                  className="h-6 w-6 rounded flex items-center justify-center text-[var(--cm-text-muted)] hover:text-[var(--cm-text)] hover:bg-[rgba(129,150,189,0.12)]"
                 >
                   ✕
                 </button>
               </div>
-
-              <div className="flex-1 overflow-y-auto p-4">
+              <div className="flex-1 overflow-y-auto p-3">
                 {analysisPanel?.content ? (
-                  <pre className="text-sm whitespace-pre-wrap">
+                  <pre className="text-xs whitespace-pre-wrap cm-mono text-slate-200/95">
                     {analysisPanel.content}
                   </pre>
                 ) : (
-                  <span className="text-[#777]">
-                    {analysisPanel?.isAnalyzing ? 'Analyzing…' : 'No analysis yet.'}
+                  <span className="text-[var(--cm-text-muted)] text-xs">
+                    {analysisPanel?.isAnalyzing ? 'Analyzing...' : 'No analysis yet.'}
                   </span>
                 )}
               </div>
-            </div>
+            </section>
           )}
 
-          {/* TERMINAL ALWAYS AT BOTTOM */}
-          <Panel />
+          {panelState.visible && (
+            <>
+              <div
+                role="separator"
+                aria-label="Resize panel"
+                className="h-[3px] bg-transparent hover:bg-[rgba(79,142,247,0.35)] cursor-row-resize transition-colors"
+                onMouseDown={(event) => {
+                  resizeRef.current = {
+                    type: 'panel',
+                    startX: event.clientX,
+                    startY: event.clientY,
+                    initialSize: panelHeight,
+                  };
+                }}
+              />
+              <div className="shrink-0" style={{ height: `${panelHeight}px` }}>
+                <Panel
+                  activeTab={panelState.activeTab}
+                  onTabChange={(tab) => setPanelState({ ...panelState, activeTab: tab })}
+                  onClose={() => setPanelState({ ...panelState, visible: false })}
+                  onToggleCollapse={() => setPanelState({ ...panelState, visible: false })}
+                  problems={panelContent?.problems}
+                  outputLines={panelContent?.outputLines}
+                  debugLines={panelContent?.debugLines}
+                  terminalLines={panelContent?.terminalLines}
+                  terminalConnected={panelContent?.terminalConnected}
+                  terminalInput={panelContent?.terminalInput}
+                  onTerminalInputChange={panelContent?.onTerminalInputChange}
+                  onTerminalSubmit={panelContent?.onTerminalSubmit}
+                  terminalTabs={panelContent?.terminalTabs}
+                  activeTerminalId={panelContent?.activeTerminalId}
+                  onTerminalTabSelect={panelContent?.onTerminalTabSelect}
+                  onTerminalCreate={panelContent?.onTerminalCreate}
+                  onTerminalClose={panelContent?.onTerminalClose}
+                />
+              </div>
+            </>
+          )}
         </div>
 
-        {/* RIGHT SIDE AI CHAT PANEL */}
         {showAI && (
-          <div className="w-80 lg:w-96 h-full border-l border-[#333] bg-[#252526] flex-shrink-0 overflow-hidden transition-all duration-300">
-            <div className="flex items-center justify-between px-3 py-2 border-b border-[#333] bg-[#bd0b0b]">
-              <span className="text-sm font-semibold text-[#e6edf3]">
+          <aside className="w-[360px] lg:w-[400px] h-full border-l border-[var(--cm-border)] cm-sidebar flex-shrink-0 overflow-hidden transition-all duration-300">
+            <div className="h-9 px-3 border-b border-[var(--cm-border)] bg-[rgba(13,18,27,0.95)] flex items-center justify-between">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--cm-text)]">
                 AI Assistant
               </span>
-
               <button
                 onClick={() => setShowAI(false)}
-                className="text-[#888] hover:text-[#fff]"
+                className="h-6 w-6 rounded flex items-center justify-center text-[var(--cm-text-muted)] hover:text-[var(--cm-text)] hover:bg-[rgba(129,150,189,0.12)]"
               >
                 ✕
               </button>
             </div>
-
-            <div className="flex-1 overflow-hidden">
+            <div className="h-[calc(100%-2.25rem)]">
               <AIChatView />
             </div>
-          </div>
+          </aside>
         )}
-
       </div>
 
       <StatusBar {...statusBarProps} />

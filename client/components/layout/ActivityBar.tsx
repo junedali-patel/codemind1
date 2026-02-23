@@ -1,6 +1,16 @@
 'use client';
 
-import { FileText, Search, GitBranch, Lightbulb, Zap, Settings, MoreHorizontal } from 'lucide-react';
+import {
+  FileText,
+  Search,
+  GitBranch,
+  Play,
+  Blocks,
+  Network,
+  Zap,
+  Settings,
+  MoreHorizontal,
+} from 'lucide-react';
 
 interface ActivityBarProps {
   activeView: string;
@@ -8,114 +18,67 @@ interface ActivityBarProps {
 }
 
 const activities = [
-  { id: 'explorer', icon: FileText, label: 'Explorer', color: 'text-blue-400' },
-  { id: 'search', icon: Search, label: 'Search', color: 'text-green-400' },
-  { id: 'git', icon: GitBranch, label: 'Source Control', color: 'text-purple-400' },
-  { id: 'mindmap', icon: Lightbulb, label: 'Mind Map', color: 'text-yellow-400' },
-  { id: 'ai', icon: Zap, label: 'AI Assistant', color: 'text-orange-400' },
+  { id: 'explorer', icon: FileText, label: 'Explorer' },
+  { id: 'search', icon: Search, label: 'Search' },
+  { id: 'git', icon: GitBranch, label: 'Source Control' },
+  { id: 'run', icon: Play, label: 'Run and Debug' },
+  { id: 'extensions', icon: Blocks, label: 'Extensions' },
+  { id: 'mindmap', icon: Network, label: 'Code Visualization' },
+  { id: 'ai', icon: Zap, label: 'AI Assistant' },
 ];
 
 export default function ActivityBar({ activeView, onViewChange }: ActivityBarProps) {
   return (
-    <div className="fixed left-0 top-0 h-screen w-12 bg-[#333333] border-r border-[#1e1e1e] flex flex-col items-center py-2 z-50">
-      <style jsx>{`
-        @keyframes pulse {
-          0%, 100% {
-            opacity: 1;
-          }
-          50% {
-            opacity: 0.7;
-          }
-        }
-
-        .activity-icon {
-          transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-          cursor: pointer;
-          padding: 8px;
-          border-radius: 6px;
-          position: relative;
-        }
-
-        .activity-icon:hover {
-          background: rgba(255, 255, 255, 0.08);
-          transform: scale(1.1);
-        }
-
-        .activity-icon.active {
-          background: rgba(14, 165, 233, 0.15);
-          box-shadow: inset 0 0 0 2px rgba(14, 165, 233, 0.5), 0 0 15px rgba(14, 165, 233, 0.3);
-        }
-
-        .activity-icon.active::before {
-          content: '';
-          position: absolute;
-          left: -8px;
-          top: 50%;
-          transform: translateY(-50%);
-          width: 3px;
-          height: 24px;
-          background: linear-gradient(to bottom, #0ea5e9, transparent);
-          border-radius: 3px;
-        }
-
-        .tooltip {
-          position: absolute;
-          left: full;
-          background: rgba(0, 0, 0, 0.9);
-          color: white;
-          padding: 6px 8px;
-          border-radius: 4px;
-          font-size: 12px;
-          white-space: nowrap;
-          pointer-events: none;
-          opacity: 0;
-          transform: translateX(10px);
-          transition: all 0.2s ease;
-          z-index: 50;
-        }
-
-        .activity-icon:hover .tooltip {
-          opacity: 1;
-          transform: translateX(16px);
-        }
-      `}</style>
-
-      <div className="flex flex-col gap-2">
-        {activities.map(({ id, icon: Icon, label }) => (
-          <div key={id} className="relative group">
-            <button
-              onClick={() => onViewChange(id)}
-              className={`activity-icon ${activeView === id ? 'active' : ''}`}
-              aria-label={label}
-            >
-              <Icon size={20} className={activeView === id ? 'text-[#0ea5e9]' : 'text-[#cccccc] group-hover:text-white'} />
-              <div className="tooltip">{label}</div>
-            </button>
-          </div>
-        ))}
+    <aside className="w-12 cm-sidebar border-r border-[var(--cm-border)] flex flex-col items-center py-2 gap-2">
+      <div className="flex flex-col gap-1">
+        {activities.map(({ id, icon: Icon, label }) => {
+          const isActive = activeView === id;
+          return (
+            <div key={id} className="relative group flex justify-center">
+              {isActive && (
+                <span className="absolute -left-[11px] top-1/2 -translate-y-1/2 h-6 w-[2px] rounded-r-full bg-[var(--cm-primary)] shadow-[0_0_12px_rgba(79,142,247,0.65)]" />
+              )}
+              <button
+                onClick={() => onViewChange(id)}
+                aria-label={label}
+                className={`h-9 w-9 rounded-md flex items-center justify-center transition-all duration-150 ${
+                  isActive
+                    ? 'bg-[rgba(79,142,247,0.16)] text-[var(--cm-text)]'
+                    : 'text-[var(--cm-text-muted)] hover:text-[var(--cm-text)] hover:bg-[rgba(129,150,189,0.12)]'
+                }`}
+              >
+                <Icon size={16} />
+              </button>
+              <div className="pointer-events-none absolute left-[120%] top-1/2 -translate-y-1/2 whitespace-nowrap rounded-md border border-[var(--cm-border)] bg-[var(--cm-surface-2)] px-2 py-1 text-[11px] text-[var(--cm-text)] opacity-0 shadow-lg transition-all group-hover:opacity-100 group-hover:translate-x-1">
+                {label}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       <div className="flex-1" />
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-1">
         <button
           onClick={() => {}}
-          className="activity-icon hover:bg-[#3e3e42]/50"
           aria-label="More"
+          className="h-9 w-9 rounded-md flex items-center justify-center text-[var(--cm-text-muted)] hover:text-[var(--cm-text)] hover:bg-[rgba(129,150,189,0.12)] transition-all"
         >
-          <MoreHorizontal size={20} className="text-[#858585] hover:text-[#cccccc]" />
-          <div className="tooltip">More</div>
+          <MoreHorizontal size={16} />
         </button>
-
         <button
-          onClick={() => {}}
-          className="activity-icon hover:bg-[#3e3e42]/50"
+          onClick={() => onViewChange('settings')}
           aria-label="Settings"
+          className={`h-9 w-9 rounded-md flex items-center justify-center transition-all ${
+            activeView === 'settings'
+              ? 'bg-[rgba(79,142,247,0.16)] text-[var(--cm-text)]'
+              : 'text-[var(--cm-text-muted)] hover:text-[var(--cm-text)] hover:bg-[rgba(129,150,189,0.12)]'
+          }`}
         >
-          <Settings size={20} className="text-[#858585] hover:text-[#cccccc]" />
-          <div className="tooltip">Settings</div>
+          <Settings size={16} />
         </button>
       </div>
-    </div>
+    </aside>
   );
 }

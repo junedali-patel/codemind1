@@ -1,6 +1,6 @@
 'use client';
 
-import { Zap } from 'lucide-react';
+import { AlertTriangle, CircleAlert, GitBranch, Zap } from 'lucide-react';
 
 interface StatusBarProps {
   line?: number;
@@ -8,118 +8,81 @@ interface StatusBarProps {
   language?: string;
   branch?: string;
   aiStatus?: 'idle' | 'processing' | 'ready';
+  workspaceKind?: 'repo' | 'local';
+  terminalCount?: number;
+  extensionHostStatus?: 'off' | 'running' | 'error';
 }
+
+const statusConfig = {
+  idle: {
+    label: 'AI Idle',
+    dot: 'bg-slate-400',
+  },
+  processing: {
+    label: 'AI Processing',
+    dot: 'bg-amber-400 cm-pulse-soft',
+  },
+  ready: {
+    label: 'AI Ready',
+    dot: 'bg-emerald-400',
+  },
+};
 
 export default function StatusBar({
   line = 1,
   column = 1,
   language = 'typescript',
   branch = 'main',
-  aiStatus = 'ready'
+  aiStatus = 'ready',
+  workspaceKind = 'repo',
+  terminalCount = 0,
+  extensionHostStatus = 'off',
 }: StatusBarProps) {
+  const config = statusConfig[aiStatus];
+  const extensionStatusLabel = extensionHostStatus === 'running'
+    ? 'Ext Host Running'
+    : extensionHostStatus === 'error'
+    ? 'Ext Host Error'
+    : 'Ext Host Off';
+
   return (
-    <div className="h-7 bg-gradient-to-r from-[#007acc]/30 via-[#1e1e1e] to-[#1e1e1e] border-t border-[#3e3e42]/50 flex items-center px-4 gap-6 text-[11px] shadow-lg">
-      <style jsx>{`
-        .status-item {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          padding: 0 8px;
-          cursor: pointer;
-          border-radius: 3px;
-          transition: all 0.2s ease;
-          color: #858585;
-        }
+    <footer className="h-[22px] px-2.5 flex items-center justify-between text-[10px] cm-mono border-t border-[var(--cm-border)] bg-[rgba(11,16,25,0.98)] text-[var(--cm-text-muted)]">
+      <div className="flex items-center gap-3">
+        <div className="text-[var(--cm-text)] uppercase tracking-[0.08em]">
+          {workspaceKind}
+        </div>
+        <div className="flex items-center gap-1 text-[var(--cm-text)]">
+          <GitBranch size={11} />
+          <span>{branch || 'no-branch'}</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <span className={`h-1.5 w-1.5 rounded-full ${config.dot}`} />
+          <span>{config.label}</span>
+        </div>
+        <div>
+          Terminals: {terminalCount}
+        </div>
+        <div>
+          {extensionStatusLabel}
+        </div>
+        <div className="flex items-center gap-1">
+          <CircleAlert size={10} />
+          <span>0</span>
+          <AlertTriangle size={10} />
+          <span>0</span>
+        </div>
+      </div>
 
-        .status-item:hover {
-          background: rgba(255, 255, 255, 0.08);
-          color: #cccccc;
-        }
-
-        .status-item.active {
-          color: #0ea5e9;
-          background: rgba(14, 165, 233, 0.1);
-        }
-
-        .status-indicator {
-          width: 8px;
-          height: 8px;
-          border-radius: 50%;
-          display: inline-block;
-        }
-
-        .status-indicator.idle {
-          background-color: #858585;
-        }
-
-        .status-indicator.processing {
-          background-color: #fbbf24;
-          animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-        }
-
-        .status-indicator.ready {
-          background-color: #34d399;
-          box-shadow: 0 0 8px rgba(52, 211, 153, 0.5);
-        }
-
-        @keyframes pulse {
-          0%, 100% {
-            opacity: 1;
-          }
-          50% {
-            opacity: 0.5;
-          }
-        }
-
-        .divider {
-          width: 1px;
-          height: 16px;
-          background: rgba(255, 255, 255, 0.1);
-        }
-
-        .status-text {
-          font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-          font-weight: 500;
-        }
-      `}</style>
-
-      <div className="status-item">
-        <div className={`status-indicator ${aiStatus}`} />
-        <span className="status-text">
-          {aiStatus === 'idle' && 'AI Ready'}
-          {aiStatus === 'processing' && 'AI Processing...'}
-          {aiStatus === 'ready' && 'AI Active'}
+      <div className="flex items-center gap-3">
+        <span>
+          Ln {line}, Col {column}
         </span>
+        <span className="uppercase text-[var(--cm-text)]">{language}</span>
+        <div className="flex items-center gap-1">
+          <Zap size={10} />
+          <span>1.5s</span>
+        </div>
       </div>
-
-      <div className="divider" />
-
-      <div className="status-item">
-        <span className="status-text">Ln {line}</span>
-      </div>
-
-      <div className="status-item">
-        <span className="status-text">Col {column}</span>
-      </div>
-
-      <div className="divider" />
-
-      <div className="status-item active">
-        <span className="status-text uppercase">{language}</span>
-      </div>
-
-      <div className="flex-1" />
-
-      <div className="status-item">
-        <span className="status-text">🌿 {branch}</span>
-      </div>
-
-      <div className="divider" />
-
-      <div className="status-item">
-        <Zap size={12} />
-        <span className="status-text">1.5s</span>
-      </div>
-    </div>
+    </footer>
   );
 }

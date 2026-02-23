@@ -1,15 +1,14 @@
 'use client';
 
-import { FolderOpen, File, ChevronRight, ChevronDown, GitBranch, Network } from 'lucide-react';
+import { ChevronDown, ChevronRight, File, FolderOpen, GitBranch, Network } from 'lucide-react';
 
-// --- UPDATE 1: Added 'content' to the interface ---
 export interface FileNode {
   id: string;
   name: string;
   type: 'file' | 'directory';
   children?: FileNode[];
   icon?: string;
-  content?: string; // <--- NEW: Holds the code for the Mind Map to read
+  content?: string;
 }
 
 interface ExplorerViewProps {
@@ -23,64 +22,63 @@ interface ExplorerViewProps {
 
 function FileTreeItem({
   file,
-  expanded,
-  selected,
+  expandedDirs,
+  selectedId,
   onFileClick,
-  onDirToggle
+  onDirToggle,
+  depth = 0,
 }: {
   file: FileNode;
-  expanded: boolean;
-  selected: boolean;
+  expandedDirs: Record<string, boolean>;
+  selectedId?: string;
   onFileClick: (file: FileNode) => void;
   onDirToggle: (path: string) => void;
+  depth?: number;
 }) {
   const isDirectory = file.type === 'directory';
+  const isExpanded = expandedDirs[file.id] || false;
+  const isSelected = selectedId === file.id;
 
   return (
     <div>
-      <div
-        className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer transition-all duration-150 rounded-sm ${
-          selected
-            ? 'bg-[#094771] text-[#cccccc]'
-            : 'text-[#cccccc] hover:bg-[#3e3e42]/30'
+      <button
+        onClick={() => (isDirectory ? onDirToggle(file.id) : onFileClick(file))}
+        className={`w-full h-6 text-left flex items-center gap-1.5 px-2 rounded transition-colors ${
+          isSelected
+            ? 'bg-[rgba(79,142,247,0.16)] text-[var(--cm-text)]'
+            : 'text-[var(--cm-text)] hover:bg-[rgba(129,150,189,0.12)]'
         }`}
-        onClick={() => {
-          if (isDirectory) {
-            onDirToggle(file.id);
-          } else {
-            // This passes the whole file object (including content) up to the parent
-            onFileClick(file);
-          }
-        }}
+        style={{ paddingLeft: `${8 + depth * 12}px` }}
       >
         {isDirectory ? (
           <>
-            {expanded ? (
-              <ChevronDown size={14} className="text-[#0ea5e9]" />
+            {isExpanded ? (
+              <ChevronDown size={12} className="text-[var(--cm-primary)] shrink-0" />
             ) : (
-              <ChevronRight size={14} className="text-[#858585]" />
+              <ChevronRight size={12} className="text-[var(--cm-text-muted)] shrink-0" />
             )}
-            <FolderOpen size={14} className="text-[#dcb939]" />
+            <FolderOpen size={12} className="text-amber-400 shrink-0" />
           </>
         ) : (
           <>
-            <div className="w-4" />
-            <File size={14} className="text-[#6ba3ff]" />
+            <span className="w-[12px] shrink-0" />
+            <File size={12} className="text-[#7aa2f7] shrink-0" />
           </>
         )}
-        <span className="text-[13px] flex-1 truncate font-medium">{file.name}</span>
-      </div>
+        <span className="text-[11px] truncate">{file.name}</span>
+      </button>
 
-      {isDirectory && expanded && file.children && (
-        <div className="ml-2 border-l border-[#3e3e42]/50">
+      {isDirectory && isExpanded && file.children && (
+        <div className="space-y-0.5 mt-0.5">
           {file.children.map((child) => (
             <FileTreeItem
               key={child.id}
               file={child}
-              expanded={true} // Simplified for recursive view, or pass specific state
-              selected={selected}
+              expandedDirs={expandedDirs}
+              selectedId={selectedId}
               onFileClick={onFileClick}
               onDirToggle={onDirToggle}
+              depth={depth + 1}
             />
           ))}
         </div>
@@ -95,54 +93,26 @@ export default function ExplorerView({
   onFileClick,
   onDirToggle,
   selectedFile,
-  onGenerateVisualization
+  onGenerateVisualization,
 }: ExplorerViewProps) {
   const isFileSelected = selectedFile && selectedFile.type === 'file';
 
   return (
-    <div className="p-3 text-[#cccccc] flex flex-col h-full">
-      <style jsx>{`
-        .explorer-section {
-          margin-bottom: 16px;
-        }
-
-        .section-title {
-          font-size: 11px;
-          font-weight: 600;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-          color: #858585;
-          padding: 8px 0 6px 8px;
-          margin-bottom: 6px;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-          transition: color 0.2s ease;
-        }
-
-        .section-title:hover {
-          color: #cccccc;
-        }
-
-        .visualization-actions {
-          margin-top: auto;
-          padding-top: 12px;
-          border-top: 1px solid rgba(255, 255, 255, 0.05);
-        }
-      `}</style>
-
-      <div className="explorer-section flex-1 overflow-y-auto">
-        <div className="section-title">PROJECT FILES</div>
+    <div className="h-full flex flex-col px-1.5 py-2 text-[var(--cm-text)]">
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className="px-2 pb-2 mb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--cm-text-muted)] border-b border-[var(--cm-border)]">
+          Project Files
+        </div>
         <div className="space-y-0.5">
           {files.length === 0 && (
-            <div className="text-[#858585] text-[12px] px-3 py-2">
-              No files found
-            </div>
+            <div className="px-3 py-2 text-xs text-[var(--cm-text-muted)]">No files found</div>
           )}
           {files.map((file) => (
             <FileTreeItem
               key={file.id}
               file={file}
-              expanded={expandedDirs[file.id] || false}
-              selected={selectedFile?.id === file.id}
+              expandedDirs={expandedDirs}
+              selectedId={selectedFile?.id}
               onFileClick={onFileClick}
               onDirToggle={onDirToggle}
             />
@@ -150,25 +120,26 @@ export default function ExplorerView({
         </div>
       </div>
 
-      {/* Visualization Actions - Only show for selected files */}
       {isFileSelected && onGenerateVisualization && (
-        <div className="visualization-actions">
-          <div className="section-title">VISUALIZE CODE</div>
-          <div className="flex flex-col gap-2 px-2">
+        <div className="pt-2 mt-2 border-t border-[var(--cm-border)]">
+          <div className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--cm-text-muted)]">
+            Visualize Code
+          </div>
+          <div className="space-y-1.5 px-1">
             <button
               onClick={() => onGenerateVisualization(selectedFile, 'flowchart')}
-              className="flex items-center gap-2 px-3 py-2 rounded text-xs font-medium transition-all bg-[#3c3c3c] hover:bg-[#4c4c4c] text-gray-300 hover:text-white"
+              className="w-full h-7 px-2 rounded cm-btn-ghost text-[11px] font-medium flex items-center gap-1.5"
               title="Generate flowchart for selected file"
             >
-              <GitBranch size={14} />
+              <GitBranch size={12} />
               <span>Generate Flowchart</span>
             </button>
             <button
               onClick={() => onGenerateVisualization(selectedFile, 'mindmap')}
-              className="flex items-center gap-2 px-3 py-2 rounded text-xs font-medium transition-all bg-[#3c3c3c] hover:bg-[#4c4c4c] text-gray-300 hover:text-white"
+              className="w-full h-7 px-2 rounded cm-btn-ghost text-[11px] font-medium flex items-center gap-1.5"
               title="Generate mindmap for selected file"
             >
-              <Network size={14} />
+              <Network size={12} />
               <span>Generate Mindmap</span>
             </button>
           </div>
@@ -177,4 +148,3 @@ export default function ExplorerView({
     </div>
   );
 }
-

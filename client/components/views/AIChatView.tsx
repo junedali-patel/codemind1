@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/ban-ts-comment, no-var, @typescript-eslint/no-unused-vars, react-hooks/exhaustive-deps */
 'use client';
 
 import { Send, Loader, Copy, Mic, MicOff } from 'lucide-react';
@@ -293,73 +294,23 @@ export default function AIChatView() {
 
   /* -------------- UI + MARKDOWN FIXES -------------- */
   return (
-    <div className="h-full flex flex-col bg-[#252526] overflow-hidden">
+    <div className="h-full flex flex-col cm-sidebar overflow-hidden">
+      <div className="h-10 px-3 border-b border-[var(--cm-border)] bg-[rgba(2,6,23,0.5)] flex items-center">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--cm-primary)]">
+          AI Assistant
+        </span>
+      </div>
 
-      <style jsx>{`
-        .chat-header {
-          padding: 8px 12px;
-          border-bottom: 1px solid rgba(0,0,0,0.7);
-          background: linear-gradient(to bottom, #2d2d30, #252526);
-          font-size: 11px;
-          font-weight: 600;
-          color: #ccc;
-        }
-
-        .chat-messages {
-          flex: 1;
-          overflow-y: auto;
-          padding: 10px 14px;
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
-        }
-
-        .message {
-          display: flex;
-          animation: fadeIn 0.25s ease-out;
-        }
-
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(6px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-
-        .message.user {
-          justify-content: flex-end;
-        }
-
-        .msg-bubble {
-          padding: 10px 14px;
-          border-radius: 8px;
-          max-width: 82%;
-          font-size: 13px;
-          line-height: 1.45;
-        }
-
-        .user .msg-bubble {
-          background: linear-gradient(135deg, #0ea5e9, #3b82f6);
-          color: white;
-        }
-
-        .assistant .msg-bubble {
-          background: rgba(255,255,255,0.06);
-          color: #ddd;
-        }
-
-        .chat-input-container {
-          padding: 10px;
-          border-top: 1px solid rgba(255,255,255,0.1);
-          background: #2a2d2e;
-        }
-      `}</style>
-
-
-      <div className="chat-header">AI Assistant</div>
-
-      <div className="chat-messages">
+      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
         {messages.map((m) => (
-          <div key={m.id} className={`message ${m.role}`}>
-            <div className="msg-bubble">
+          <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div
+              className={`max-w-[82%] px-3 py-2 rounded-xl text-[13px] leading-[1.45] ${
+                m.role === 'user'
+                  ? 'cm-btn-primary text-white'
+                  : 'bg-[rgba(148,163,184,0.12)] text-slate-100 border border-[var(--cm-border)]'
+              }`}
+            >
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
@@ -376,7 +327,7 @@ export default function AIChatView() {
                           {/* COPY BUTTON */}
                           <button
                             onClick={() => copyToClipboard(codeText)}
-                            className="absolute right-2 top-2 text-xs text-gray-300 hover:text-white bg-black/20 px-2 py-1 rounded"
+                            className="absolute right-2 top-2 text-xs text-slate-300 hover:text-white bg-black/20 px-2 py-1 rounded"
                           >
                             <Copy size={12} />
                           </button>
@@ -399,11 +350,7 @@ export default function AIChatView() {
                       );
                     }
 
-                    return (
-                      <code className="px-1 py-0.5 bg-black/20 rounded text-[11px]">
-                        {children}
-                      </code>
-                    );
+                    return <code className="px-1 py-0.5 bg-black/20 rounded text-[11px]">{children}</code>;
                   }
                 }}
               >
@@ -414,8 +361,8 @@ export default function AIChatView() {
         ))}
 
         {isLoading && (
-          <div className="message assistant">
-            <div className="msg-bubble flex items-center gap-2 text-blue-400">
+          <div className="flex justify-start">
+            <div className="max-w-[82%] px-3 py-2 rounded-xl text-[13px] leading-[1.45] bg-[rgba(148,163,184,0.12)] text-sky-300 border border-[var(--cm-border)] flex items-center gap-2">
               <Loader size={14} className="animate-spin" /> Thinking...
             </div>
           </div>
@@ -424,7 +371,7 @@ export default function AIChatView() {
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="chat-input-container">
+      <div className="p-2.5 border-t border-[var(--cm-border)] bg-[rgba(2,6,23,0.55)]">
         <div className="flex gap-2 items-center">
           <textarea
             value={input}
@@ -436,7 +383,7 @@ export default function AIChatView() {
               }
             }}
             placeholder="Ask me anything..."
-            className="flex-1 bg-black/20 rounded px-3 py-2 text-sm text-white"
+            className="flex-1 h-10 max-h-24 rounded-lg px-3 py-2 text-sm text-[var(--cm-text)] bg-[rgba(15,23,42,0.75)] border border-[var(--cm-border-soft)] focus:outline-none focus:border-[var(--cm-primary)]"
           />
 
           <button
@@ -445,7 +392,7 @@ export default function AIChatView() {
             className={`px-3 py-2 rounded transition-colors ${
               isRecording || isListening
                 ? 'bg-red-600 hover:bg-red-700 text-white animate-pulse'
-                : 'bg-gray-600 hover:bg-gray-700 text-white'
+                : 'cm-btn-ghost text-[var(--cm-text)]'
             }`}
             title={isRecording || isListening ? 'Stop recording' : 'Start voice input'}
           >
@@ -455,7 +402,7 @@ export default function AIChatView() {
           <button
             onClick={handleSend}
             disabled={!input.trim() || isLoading}
-            className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-3 py-2 rounded cm-btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Send size={16} />
           </button>

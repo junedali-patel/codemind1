@@ -1,475 +1,2093 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import axios from 'axios';
-import { Code, File as FileIcon, FileText, FileImage, Sparkles, Loader2, AlertCircle } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import {
+  AlertCircle,
+  Check,
+  ChevronRight,
+  Code,
+  Command,
+  Loader2,
+  Save,
+  Search,
+  Settings2,
+  Sparkles,
+  TerminalSquare,
+  X,
+} from 'lucide-react';
 import CodeEditor from '@/components/CodeEditor';
-import IDELayout from '@/components/layout/IDELayout';
-import MindMapView from '@/components/views/MindMapView'; // <--- IMPORTED VISUALIZER
+import IDELayout, {
+  PanelState,
+  SidebarState,
+  SidebarView,
+} from '@/components/layout/IDELayout';
+import { EditorTab } from '@/components/layout/EditorTabs';
+import { PanelProblem } from '@/components/layout/Panel';
+import MindMapView from '@/components/views/MindMapView';
+import { FileNode } from '@/components/views/ExplorerView';
+import { GitStatusPayload } from '@/components/views/GitView';
+import { SearchMatch } from '@/components/views/SearchView';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:4000';
 
-interface GitHubFile {
-  name: string;
+const FILE_EXTENSIONS_FOR_ANALYSIS = new Set([
+  'js',
+  'jsx',
+  'ts',
+  'tsx',
+  'py',
+  'java',
+  'go',
+  'rs',
+  'c',
+  'cpp',
+  'h',
+  'hpp',
+  'md',
+  'json',
+  'yml',
+  'yaml',
+]);
+
+interface WorkspaceOpenPayload {
+  sessionId: string;
+  rootPath: string;
+  branch: string;
+  kind?: 'repo' | 'local';
+  provider?: string;
+  displayName?: string;
+  isGitRepo?: boolean;
+}
+
+interface WorkspaceFilePayload {
   path: string;
-  sha: string;
+  content: string;
   size: number;
-  url: string;
-  html_url: string;
-  git_url: string;
-  download_url: string | null;
-  type: 'file' | 'dir';
-  content?: string;
-  encoding?: string;
-  _links: {
-    self: string;
-    git: string;
-    html: string;
+  modifiedAt: string;
+}
+
+interface WorkspaceTreePayload {
+  tree: FileNode[];
+}
+
+interface WorkspaceMetaPayload {
+  sessionId: string;
+  kind: 'repo' | 'local';
+  provider: string;
+  displayName: string;
+  rootPath: string;
+  branch: string;
+  isGitRepo: boolean;
+}
+
+interface WorkspaceSearchPayload {
+  matches: SearchMatch[];
+  total: number;
+  truncated: boolean;
+}
+
+interface DocumentState {
+  path: string;
+  name: string;
+  language: string;
+  content: string;
+  savedContent: string;
+  isDirty: boolean;
+  isLoading: boolean;
+}
+
+interface TerminalStreamPayload {
+  type: 'stdout' | 'stderr' | 'stdin' | 'system' | 'exit' | 'error';
+  data: string;
+  timestamp: string;
+}
+
+interface TerminalSessionPayload {
+  terminalId: string;
+  name?: string;
+  workspaceSessionId: string;
+  cwd: string;
+  shell: string;
+}
+
+interface TerminalClientSession {
+  id: string;
+  name: string;
+  connected: boolean;
+  lines: string[];
+  input: string;
+}
+
+interface AiAnalysisPayload {
+  success?: boolean;
+  analysis?: string;
+  error?: string;
+}
+
+interface CommandAction {
+  id: string;
+  label: string;
+  keywords: string[];
+  run: () => void | Promise<void>;
+}
+
+interface QuickOpenState {
+  open: boolean;
+  query: string;
+  selectedIndex: number;
+}
+
+interface CommandPaletteState {
+  open: boolean;
+  query: string;
+  selectedIndex: number;
+}
+
+type RequestError = Error & {
+  status?: number;
+  url?: string;
+};
+
+function normalizePath(inputPath: string): string {
+  return inputPath.replace(/\\/g, '/').replace(/^\/+/, '');
+}
+
+function getExtension(filename: string): string {
+  return filename.split('.').pop()?.toLowerCase() || '';
+}
+
+function getLanguage(filename: string): string {
+  const extension = getExtension(filename);
+  const languageMap: Record<string, string> = {
+    js: 'javascript',
+    jsx: 'javascript',
+    ts: 'typescript',
+    tsx: 'typescript',
+    py: 'python',
+    md: 'markdown',
+    json: 'json',
+    html: 'html',
+    css: 'css',
+    java: 'java',
+    cpp: 'cpp',
+    c: 'c',
+    cs: 'csharp',
+    php: 'php',
+    rb: 'ruby',
+    go: 'go',
+    rs: 'rust',
+    yml: 'yaml',
+    yaml: 'yaml',
+    sh: 'shell',
+    txt: 'plaintext',
   };
+  return languageMap[extension] || 'plaintext';
 }
 
-interface FileNode {
-  id: string;
-  name: string;
-  type: 'file' | 'directory';
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  if (typeof error === 'string' && error.length > 0) {
+    return error;
+  }
+  return fallback;
 }
 
-interface EditorTab {
-  id: string;
-  name: string;
-  isDirty?: boolean;
+function getErrorStatus(error: unknown): number | undefined {
+  if (!(error instanceof Error)) {
+    return undefined;
+  }
+
+  const maybeError = error as RequestError;
+  return typeof maybeError.status === 'number' ? maybeError.status : undefined;
+}
+
+function flattenFilePaths(nodes: FileNode[]): string[] {
+  const output: string[] = [];
+
+  for (const node of nodes) {
+    if (node.type === 'file') {
+      output.push(node.id);
+      continue;
+    }
+
+    if (node.children?.length) {
+      output.push(...flattenFilePaths(node.children));
+    }
+  }
+
+  return output;
+}
+
+function findNodeById(nodes: FileNode[], nodeId: string): FileNode | null {
+  for (const node of nodes) {
+    if (node.id === nodeId) {
+      return node;
+    }
+    if (node.children?.length) {
+      const found = findNodeById(node.children, nodeId);
+      if (found) {
+        return found;
+      }
+    }
+  }
+  return null;
+}
+
+function fuzzyPathMatch(path: string, query: string): boolean {
+  const pathInput = path.toLowerCase();
+  const queryInput = query.toLowerCase().trim();
+
+  if (!queryInput) {
+    return true;
+  }
+
+  if (pathInput.includes(queryInput)) {
+    return true;
+  }
+
+  let index = 0;
+  for (const char of pathInput) {
+    if (char === queryInput[index]) {
+      index += 1;
+    }
+    if (index === queryInput.length) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers);
+  if (init?.body && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  const response = await fetch(url, {
+    ...init,
+    headers,
+  });
+
+  if (!response.ok) {
+    let message = `${response.status} ${response.statusText}`;
+    try {
+      const payload = (await response.json()) as { error?: string; details?: string; message?: string };
+      message = payload.details || payload.error || payload.message || message;
+    } catch {
+      // ignore payload parsing errors
+    }
+    const error = new Error(message) as RequestError;
+    error.status = response.status;
+    error.url = url;
+    throw error;
+  }
+
+  return response.json() as Promise<T>;
 }
 
 export default function RepoPage() {
   const params = useParams();
   const router = useRouter();
-  const { owner, repo } = params as { owner: string; repo: string };
+  const searchParams = useSearchParams();
+  const routeParams = params as { owner?: string; repo?: string };
+  const owner = routeParams.owner || '';
+  const repo = routeParams.repo || '';
+  const forcedSessionId = searchParams?.get('sessionId') || '';
 
-  const [isLoading, setIsLoading] = useState(true);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [error, setError] = useState('');
-  const [repoContent, setRepoContent] = useState<GitHubFile[]>([]);
+  const [workspaceSessionId, setWorkspaceSessionId] = useState('');
+  const [workspaceBranch, setWorkspaceBranch] = useState('main');
+  const [workspaceTree, setWorkspaceTree] = useState<FileNode[]>([]);
   const [expandedDirs, setExpandedDirs] = useState<Record<string, boolean>>({});
-  const [selectedFile, setSelectedFile] = useState<GitHubFile | null>(null);
-  const [fileContent, setFileContent] = useState('');
-  const [isLoadingFile, setIsLoadingFile] = useState(false);
-  const [streamingAnalysis, setStreamingAnalysis] = useState('');
-  const [visualizationTrigger, setVisualizationTrigger] = useState<{ type: 'flowchart' | 'mindmap' | null; timestamp?: number }>({ type: null });
+  const [workspaceKind, setWorkspaceKind] = useState<'repo' | 'local'>('repo');
+  const [workspaceDisplayName, setWorkspaceDisplayName] = useState('');
+  const [workspaceProvider, setWorkspaceProvider] = useState('github');
 
-  const getFileExtension = (filename: string) => {
-    return filename.split('.').pop()?.toLowerCase() || '';
-  };
+  const [documents, setDocuments] = useState<Record<string, DocumentState>>({});
+  const [openTabs, setOpenTabs] = useState<string[]>([]);
+  const [activeTabPath, setActiveTabPath] = useState('');
 
-  const getLanguage = (filename: string): string => {
-    const ext = getFileExtension(filename);
-    const languageMap: Record<string, string> = {
-      'js': 'javascript',
-      'ts': 'typescript',
-      'py': 'python',
-      'md': 'markdown',
-      'json': 'json',
-      'html': 'html',
-      'css': 'css',
-      'jsx': 'javascript',
-      'tsx': 'typescript',
-      'java': 'java',
-      'cpp': 'cpp',
-      'c': 'c',
-      'cs': 'csharp',
-      'php': 'php',
-      'rb': 'ruby',
-      'go': 'go',
-      'rs': 'rust',
+  const [isWorkspaceLoading, setIsWorkspaceLoading] = useState(true);
+  const [isFileLoading, setIsFileLoading] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisOutput, setAnalysisOutput] = useState('');
+
+  const [error, setError] = useState('');
+  const [problems, setProblems] = useState<PanelProblem[]>([]);
+  const [outputLines, setOutputLines] = useState<string[]>([]);
+  const [debugLines, setDebugLines] = useState<string[]>([]);
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchMatch[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+
+  const [gitStatus, setGitStatus] = useState<GitStatusPayload | null>(null);
+  const [gitBusy, setGitBusy] = useState(false);
+  const [commitMessage, setCommitMessage] = useState('');
+
+  const [terminalSessions, setTerminalSessions] = useState<Record<string, TerminalClientSession>>({});
+  const [terminalOrder, setTerminalOrder] = useState<string[]>([]);
+  const [activeTerminalId, setActiveTerminalId] = useState('');
+
+  const [sidebarState, setSidebarState] = useState<SidebarState>({
+    visible: true,
+    width: 280,
+    activeView: 'explorer',
+  });
+
+  const [panelState, setPanelState] = useState<PanelState>({
+    visible: true,
+    activeTab: 'problems',
+    height: 220,
+  });
+
+  const [quickOpen, setQuickOpen] = useState<QuickOpenState>({
+    open: false,
+    query: '',
+    selectedIndex: 0,
+  });
+
+  const [commandPalette, setCommandPalette] = useState<CommandPaletteState>({
+    open: false,
+    query: '',
+    selectedIndex: 0,
+  });
+
+  const [visualizationTrigger, setVisualizationTrigger] = useState<{
+    type: 'flowchart' | 'mindmap' | null;
+    timestamp?: number;
+  }>({ type: null });
+
+  const terminalEventSourcesRef = useRef<Record<string, EventSource>>({});
+  const workspaceSessionIdRef = useRef('');
+  const workspaceInitAttemptRef = useRef<string | null>(null);
+  const quickOpenInputRef = useRef<HTMLInputElement | null>(null);
+  const commandPaletteInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    workspaceSessionIdRef.current = workspaceSessionId;
+  }, [workspaceSessionId]);
+
+  const appendOutput = useCallback((line: string) => {
+    const timestamp = new Date().toLocaleTimeString();
+    setOutputLines((previous) => [...previous, `[${timestamp}] ${line}`].slice(-600));
+  }, []);
+
+  const appendDebug = useCallback((line: string) => {
+    const timestamp = new Date().toLocaleTimeString();
+    setDebugLines((previous) => [...previous, `[${timestamp}] ${line}`].slice(-600));
+  }, []);
+
+  const pushProblem = useCallback(
+    (problem: Omit<PanelProblem, 'id'>) => {
+      setProblems((previous) => [
+        {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          ...problem,
+        },
+        ...previous,
+      ].slice(0, 50));
+
+      setPanelState((previous) => {
+        if (previous.visible && previous.activeTab === 'problems') {
+          return previous;
+        }
+        return { ...previous, visible: true, activeTab: 'problems' };
+      });
+    },
+    []
+  );
+
+  const clearProblems = useCallback(() => {
+    setProblems([]);
+  }, []);
+
+  useEffect(() => {
+    const raw = localStorage.getItem('codemind.layout');
+    if (!raw) return;
+
+    try {
+      const parsed = JSON.parse(raw) as {
+        sidebarWidth?: number;
+        sidebarVisible?: boolean;
+        panelHeight?: number;
+        panelVisible?: boolean;
+      };
+
+      setSidebarState((previous) => ({
+        ...previous,
+        width: typeof parsed.sidebarWidth === 'number' ? parsed.sidebarWidth : previous.width,
+        visible: typeof parsed.sidebarVisible === 'boolean' ? parsed.sidebarVisible : previous.visible,
+      }));
+
+      setPanelState((previous) => ({
+        ...previous,
+        height: typeof parsed.panelHeight === 'number' ? parsed.panelHeight : previous.height,
+        visible: typeof parsed.panelVisible === 'boolean' ? parsed.panelVisible : previous.visible,
+      }));
+    } catch {
+      // ignore malformed persisted layout state
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(
+      'codemind.layout',
+      JSON.stringify({
+        sidebarWidth: sidebarState.width,
+        sidebarVisible: sidebarState.visible,
+        panelHeight: panelState.height,
+        panelVisible: panelState.visible,
+      })
+    );
+  }, [panelState.height, panelState.visible, sidebarState.visible, sidebarState.width]);
+
+  const allFilePaths = useMemo(() => flattenFilePaths(workspaceTree), [workspaceTree]);
+
+  const quickOpenResults = useMemo(() => {
+    const query = quickOpen.query.trim();
+    const candidates = query.length > 0
+      ? allFilePaths.filter((path) => fuzzyPathMatch(path, query))
+      : allFilePaths;
+
+    return candidates.slice(0, 100);
+  }, [allFilePaths, quickOpen.query]);
+
+  const activeDocument = activeTabPath ? documents[activeTabPath] : undefined;
+  const activeTerminalSession = activeTerminalId ? terminalSessions[activeTerminalId] : undefined;
+
+  const selectedFileNode = useMemo(() => {
+    if (!activeTabPath) return null;
+    return findNodeById(workspaceTree, activeTabPath);
+  }, [activeTabPath, workspaceTree]);
+
+  const tabs = useMemo<EditorTab[]>(
+    () =>
+      openTabs.map((path) => {
+        const document = documents[path];
+        return {
+          id: path,
+          name: document?.name || path.split('/').pop() || path,
+          language: document?.language,
+          isDirty: document?.isDirty,
+        };
+      }),
+    [documents, openTabs]
+  );
+
+  const loadWorkspaceTree = useCallback(async (sessionId: string) => {
+    const payload = await requestJson<WorkspaceTreePayload>(
+      `${API_BASE_URL}/api/workspace/${encodeURIComponent(sessionId)}/tree`
+    );
+
+    setWorkspaceTree(payload.tree || []);
+    setExpandedDirs((previous) => {
+      if (Object.keys(previous).length > 0) {
+        return previous;
+      }
+      const expanded: Record<string, boolean> = {};
+      for (const node of payload.tree || []) {
+        if (node.type === 'directory') {
+          expanded[node.id] = true;
+        }
+      }
+      return expanded;
+    });
+  }, []);
+
+  const loadWorkspaceMeta = useCallback(async (sessionId: string) => {
+    const payload = await requestJson<WorkspaceMetaPayload>(
+      `${API_BASE_URL}/api/workspace/${encodeURIComponent(sessionId)}/meta`
+    );
+
+    setWorkspaceKind(payload.kind || 'repo');
+    setWorkspaceDisplayName(payload.displayName || '');
+    setWorkspaceProvider(payload.provider || 'github');
+    setWorkspaceBranch(payload.branch || '');
+    return payload;
+  }, []);
+
+  const refreshGitStatus = useCallback(
+    async (sessionIdOverride?: string) => {
+      const sessionId = sessionIdOverride || workspaceSessionIdRef.current;
+      if (!sessionId) return;
+
+      const status = await requestJson<GitStatusPayload>(
+        `${API_BASE_URL}/api/workspace/${encodeURIComponent(sessionId)}/status`
+      );
+
+      setGitStatus(status);
+      setWorkspaceBranch((previous) => status.branch || previous || 'main');
+    },
+    []
+  );
+
+  const openWorkspace = useCallback(async () => {
+    setIsWorkspaceLoading(true);
+    setError('');
+    clearProblems();
+
+    try {
+      if (forcedSessionId) {
+        setWorkspaceSessionId(forcedSessionId);
+        const meta = await loadWorkspaceMeta(forcedSessionId);
+        appendOutput(`Workspace ready: ${meta.rootPath}`);
+
+        await Promise.all([
+          loadWorkspaceTree(forcedSessionId),
+          refreshGitStatus(forcedSessionId),
+        ]);
+        return;
+      }
+
+      if (!owner || !repo) {
+        throw new Error('Missing repository context for workspace open.');
+      }
+
+      const token = localStorage.getItem('github_token');
+      if (!token) {
+        router.push('/');
+        return;
+      }
+
+      const payload = await requestJson<WorkspaceOpenPayload>(`${API_BASE_URL}/api/workspace/open-repo`, {
+        method: 'POST',
+        body: JSON.stringify({ owner, repo, token }),
+      });
+
+      setWorkspaceSessionId(payload.sessionId);
+      setWorkspaceKind(payload.kind || 'repo');
+      setWorkspaceProvider(payload.provider || 'github');
+      setWorkspaceDisplayName(payload.displayName || `${owner}/${repo}`);
+      setWorkspaceBranch(payload.branch || 'main');
+      appendOutput(`Workspace ready: ${payload.rootPath}`);
+
+      await Promise.all([
+        loadWorkspaceTree(payload.sessionId),
+        refreshGitStatus(payload.sessionId),
+      ]);
+    } catch (workspaceError) {
+      const status = getErrorStatus(workspaceError);
+      const message = status === 404
+        ? `Backend route ${API_BASE_URL}/api/workspace/open-repo returned 404. Restart the backend on port 4000 with the latest server code.`
+        : getErrorMessage(workspaceError, 'Failed to open workspace');
+      setError(message);
+      pushProblem({
+        severity: 'error',
+        source: 'workspace',
+        message,
+      });
+    } finally {
+      setIsWorkspaceLoading(false);
+    }
+  }, [
+    appendOutput,
+    clearProblems,
+    forcedSessionId,
+    loadWorkspaceMeta,
+    loadWorkspaceTree,
+    owner,
+    pushProblem,
+    refreshGitStatus,
+    repo,
+    router,
+  ]);
+
+  useEffect(() => {
+    const workspaceKey = forcedSessionId ? `session:${forcedSessionId}` : `${owner}/${repo}`;
+    if (workspaceInitAttemptRef.current === workspaceKey) {
+      return;
+    }
+    workspaceInitAttemptRef.current = workspaceKey;
+    void openWorkspace();
+  }, [forcedSessionId, openWorkspace, owner, repo]);
+
+  useEffect(() => {
+    const eventSources = terminalEventSourcesRef.current;
+
+    return () => {
+      const terminalIds = Object.keys(eventSources);
+      for (const terminalId of terminalIds) {
+        eventSources[terminalId].close();
+        delete eventSources[terminalId];
+        void fetch(`${API_BASE_URL}/api/terminal/${encodeURIComponent(terminalId)}`, {
+          method: 'DELETE',
+        }).catch(() => undefined);
+      }
+
+      const currentWorkspaceId = workspaceSessionIdRef.current;
+      if (currentWorkspaceId) {
+        void fetch(`${API_BASE_URL}/api/workspace/${encodeURIComponent(currentWorkspaceId)}`, {
+          method: 'DELETE',
+        }).catch(() => undefined);
+      }
     };
-    return languageMap[ext] || 'plaintext';
-  };
+  }, []);
 
-  const analyzeRepository = async () => {
-    if (!repoContent.length) {
-      setError('No repository content available to analyze');
+  const ensurePathExpanded = useCallback((filePath: string) => {
+    const pathSegments = normalizePath(filePath).split('/');
+
+    setExpandedDirs((previous) => {
+      const next = { ...previous };
+      for (let i = 1; i < pathSegments.length; i += 1) {
+        const directoryPath = pathSegments.slice(0, i).join('/');
+        next[directoryPath] = true;
+      }
+      return next;
+    });
+  }, []);
+
+  const openDocument = useCallback(
+    async (path: string) => {
+      const normalizedPath = normalizePath(path);
+      if (!normalizedPath || !workspaceSessionId) {
+        return;
+      }
+
+      setError('');
+      ensurePathExpanded(normalizedPath);
+
+      setOpenTabs((previous) => (previous.includes(normalizedPath) ? previous : [...previous, normalizedPath]));
+      setActiveTabPath(normalizedPath);
+
+      const existing = documents[normalizedPath];
+      if (existing && !existing.isLoading) {
+        return;
+      }
+
+      const fileName = normalizedPath.split('/').pop() || normalizedPath;
+      setDocuments((previous) => ({
+        ...previous,
+        [normalizedPath]: {
+          path: normalizedPath,
+          name: fileName,
+          language: getLanguage(fileName),
+          content: previous[normalizedPath]?.content || '',
+          savedContent: previous[normalizedPath]?.savedContent || '',
+          isDirty: previous[normalizedPath]?.isDirty || false,
+          isLoading: true,
+        },
+      }));
+
+      setIsFileLoading(true);
+
+      try {
+        const payload = await requestJson<WorkspaceFilePayload>(
+          `${API_BASE_URL}/api/workspace/${encodeURIComponent(workspaceSessionId)}/file?path=${encodeURIComponent(
+            normalizedPath
+          )}`
+        );
+
+        setDocuments((previous) => ({
+          ...previous,
+          [normalizedPath]: {
+            path: normalizedPath,
+            name: fileName,
+            language: getLanguage(fileName),
+            content: payload.content,
+            savedContent: payload.content,
+            isDirty: false,
+            isLoading: false,
+          },
+        }));
+
+        appendOutput(`Opened ${normalizedPath}`);
+      } catch (fileError) {
+        const message = getErrorMessage(fileError, `Failed to open ${normalizedPath}`);
+        setError(message);
+        pushProblem({
+          severity: 'error',
+          source: 'file',
+          path: normalizedPath,
+          message,
+        });
+
+        setDocuments((previous) => ({
+          ...previous,
+          [normalizedPath]: {
+            path: normalizedPath,
+            name: fileName,
+            language: getLanguage(fileName),
+            content: `// ${message}`,
+            savedContent: `// ${message}`,
+            isDirty: false,
+            isLoading: false,
+          },
+        }));
+      } finally {
+        setIsFileLoading(false);
+      }
+    },
+    [appendOutput, documents, ensurePathExpanded, pushProblem, workspaceSessionId]
+  );
+
+  const saveDocument = useCallback(
+    async (pathOverride?: string) => {
+      const pathToSave = pathOverride || activeTabPath;
+      if (!pathToSave || !workspaceSessionId) {
+        return;
+      }
+
+      const current = documents[pathToSave];
+      if (!current || !current.isDirty) {
+        return;
+      }
+
+      try {
+        await requestJson<{ success: boolean }>(
+          `${API_BASE_URL}/api/workspace/${encodeURIComponent(workspaceSessionId)}/file`,
+          {
+            method: 'PUT',
+            body: JSON.stringify({
+              path: pathToSave,
+              content: current.content,
+            }),
+          }
+        );
+
+        setDocuments((previous) => {
+          const document = previous[pathToSave];
+          if (!document) return previous;
+          return {
+            ...previous,
+            [pathToSave]: {
+              ...document,
+              savedContent: document.content,
+              isDirty: false,
+            },
+          };
+        });
+
+        appendOutput(`Saved ${pathToSave}`);
+        await refreshGitStatus();
+      } catch (saveError) {
+        const message = getErrorMessage(saveError, `Failed to save ${pathToSave}`);
+        setError(message);
+        pushProblem({
+          severity: 'error',
+          source: 'save',
+          path: pathToSave,
+          message,
+        });
+      }
+    },
+    [activeTabPath, appendOutput, documents, pushProblem, refreshGitStatus, workspaceSessionId]
+  );
+
+  const saveAllDocuments = useCallback(async () => {
+    const dirtyPaths = openTabs.filter((path) => documents[path]?.isDirty);
+    for (const path of dirtyPaths) {
+      await saveDocument(path);
+    }
+  }, [documents, openTabs, saveDocument]);
+
+  const closeTab = useCallback(
+    (tabPath: string) => {
+      const doc = documents[tabPath];
+      if (doc?.isDirty) {
+        const shouldClose = window.confirm(`Discard unsaved changes in ${doc.name}?`);
+        if (!shouldClose) {
+          return;
+        }
+      }
+
+      setOpenTabs((previous) => {
+        const next = previous.filter((path) => path !== tabPath);
+
+        if (activeTabPath === tabPath) {
+          const closedTabIndex = previous.indexOf(tabPath);
+          const fallbackPath = next[closedTabIndex] || next[closedTabIndex - 1] || '';
+          setActiveTabPath(fallbackPath);
+        }
+
+        return next;
+      });
+    },
+    [activeTabPath, documents]
+  );
+
+  const onEditorChange = useCallback(
+    (updatedContent: string | undefined) => {
+      if (!activeTabPath) return;
+
+      const nextContent = updatedContent ?? '';
+      setDocuments((previous) => {
+        const current = previous[activeTabPath];
+        if (!current) {
+          return previous;
+        }
+
+        return {
+          ...previous,
+          [activeTabPath]: {
+            ...current,
+            content: nextContent,
+            isDirty: nextContent !== current.savedContent,
+          },
+        };
+      });
+    },
+    [activeTabPath]
+  );
+
+  const connectTerminalStream = useCallback(
+    (nextTerminalId: string) => {
+      const existingStream = terminalEventSourcesRef.current[nextTerminalId];
+      if (existingStream) {
+        existingStream.close();
+      }
+
+      const streamUrl = `${API_BASE_URL}/api/terminal/${encodeURIComponent(nextTerminalId)}/stream`;
+      const stream = new EventSource(streamUrl);
+      terminalEventSourcesRef.current[nextTerminalId] = stream;
+
+      stream.addEventListener('ready', () => {
+        setTerminalSessions((previous) => {
+          const existingSession = previous[nextTerminalId];
+          if (!existingSession) return previous;
+          return {
+            ...previous,
+            [nextTerminalId]: {
+              ...existingSession,
+              connected: true,
+            },
+          };
+        });
+        appendOutput('Terminal stream connected');
+      });
+
+      stream.addEventListener('message', (event) => {
+        try {
+          const payload = JSON.parse(event.data) as TerminalStreamPayload;
+          const lines = payload.data.replace(/\r/g, '').split('\n');
+
+          setTerminalSessions((previous) => {
+            const existingSession = previous[nextTerminalId];
+            if (!existingSession) return previous;
+            return {
+              ...previous,
+              [nextTerminalId]: {
+                ...existingSession,
+                lines: [...existingSession.lines, ...lines].slice(-1800),
+              },
+            };
+          });
+
+          if (payload.type === 'stderr' || payload.type === 'error') {
+            appendDebug(`terminal: ${payload.data}`);
+          }
+
+          if (payload.type === 'exit') {
+            setTerminalSessions((previous) => {
+              const existingSession = previous[nextTerminalId];
+              if (!existingSession) return previous;
+              return {
+                ...previous,
+                [nextTerminalId]: {
+                  ...existingSession,
+                  connected: false,
+                },
+              };
+            });
+            appendOutput(payload.data);
+          }
+        } catch (streamError) {
+          appendDebug(getErrorMessage(streamError, 'Terminal stream parse error'));
+        }
+      });
+
+      stream.onerror = () => {
+        setTerminalSessions((previous) => {
+          const existingSession = previous[nextTerminalId];
+          if (!existingSession) return previous;
+          return {
+            ...previous,
+            [nextTerminalId]: {
+              ...existingSession,
+              connected: false,
+            },
+          };
+        });
+      };
+    },
+    [appendDebug, appendOutput]
+  );
+
+  const ensureTerminalSession = useCallback(async () => {
+    if (!workspaceSessionId) {
+      return;
+    }
+
+    setPanelState((previous) => ({
+      ...previous,
+      visible: true,
+      activeTab: 'terminal',
+    }));
+
+    try {
+      const payload = await requestJson<TerminalSessionPayload>(`${API_BASE_URL}/api/terminal/session`, {
+        method: 'POST',
+        body: JSON.stringify({
+          workspaceSessionId,
+        }),
+      });
+
+      setTerminalSessions((previous) => ({
+        ...previous,
+        [payload.terminalId]: {
+          id: payload.terminalId,
+          name: payload.name || `Terminal ${Object.keys(previous).length + 1}`,
+          connected: true,
+          lines: [`# Terminal session started (${payload.shell})`],
+          input: '',
+        },
+      }));
+      setTerminalOrder((previous) => (
+        previous.includes(payload.terminalId) ? previous : [...previous, payload.terminalId]
+      ));
+      setActiveTerminalId(payload.terminalId);
+      appendOutput('Terminal session started');
+      connectTerminalStream(payload.terminalId);
+    } catch (terminalError) {
+      const message = getErrorMessage(
+        terminalError,
+        'Failed to start terminal. Ensure TERMINAL_ENABLED=true on the server.'
+      );
+      setError(message);
+      pushProblem({
+        severity: 'warning',
+        source: 'terminal',
+        message,
+      });
+      appendDebug(message);
+    }
+  }, [appendDebug, appendOutput, connectTerminalStream, pushProblem, workspaceSessionId]);
+
+  const setActiveTerminalInput = useCallback((nextInput: string) => {
+    if (!activeTerminalId) return;
+    setTerminalSessions((previous) => {
+      const currentSession = previous[activeTerminalId];
+      if (!currentSession) return previous;
+      return {
+        ...previous,
+        [activeTerminalId]: {
+          ...currentSession,
+          input: nextInput,
+        },
+      };
+    });
+  }, [activeTerminalId]);
+
+  const closeTerminalSession = useCallback(async (terminalSessionId: string) => {
+    const stream = terminalEventSourcesRef.current[terminalSessionId];
+    if (stream) {
+      stream.close();
+      delete terminalEventSourcesRef.current[terminalSessionId];
+    }
+
+    await fetch(`${API_BASE_URL}/api/terminal/${encodeURIComponent(terminalSessionId)}`, {
+      method: 'DELETE',
+    }).catch(() => undefined);
+
+    setTerminalSessions((previous) => {
+      const next = { ...previous };
+      delete next[terminalSessionId];
+      return next;
+    });
+    setTerminalOrder((previous) => {
+      const next = previous.filter((id) => id !== terminalSessionId);
+      if (activeTerminalId === terminalSessionId) {
+        setActiveTerminalId(next[next.length - 1] || '');
+      }
+      return next;
+    });
+  }, [activeTerminalId]);
+
+  const sendTerminalInput = useCallback(async () => {
+    const command = activeTerminalSession?.input || '';
+    if (!command.trim() || !activeTerminalId) {
+      return;
+    }
+
+    try {
+      await requestJson<{ success: boolean }>(
+        `${API_BASE_URL}/api/terminal/${encodeURIComponent(activeTerminalId)}/input`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            text: `${command}\n`,
+          }),
+        }
+      );
+
+      setTerminalSessions((previous) => {
+        const currentSession = previous[activeTerminalId];
+        if (!currentSession) return previous;
+        return {
+          ...previous,
+          [activeTerminalId]: {
+            ...currentSession,
+            input: '',
+          },
+        };
+      });
+    } catch (terminalError) {
+      const message = getErrorMessage(terminalError, 'Failed to write to terminal');
+      setError(message);
+      pushProblem({
+        severity: 'error',
+        source: 'terminal',
+        message,
+      });
+      appendDebug(message);
+    }
+  }, [activeTerminalId, activeTerminalSession?.input, appendDebug, pushProblem]);
+
+  useEffect(() => {
+    if (!workspaceSessionId) return;
+    void requestJson<{ terminals: Array<{ terminalId: string; name: string; isClosed: boolean }> }>(
+      `${API_BASE_URL}/api/terminal/workspace/${encodeURIComponent(workspaceSessionId)}`
+    )
+      .then((payload) => {
+        const terminals = payload.terminals || [];
+        setTerminalSessions((previous) => {
+          const next = { ...previous };
+          for (const terminal of terminals) {
+            if (next[terminal.terminalId]) continue;
+            next[terminal.terminalId] = {
+              id: terminal.terminalId,
+              name: terminal.name || `Terminal ${Object.keys(next).length + 1}`,
+              connected: !terminal.isClosed,
+              lines: [],
+              input: '',
+            };
+            connectTerminalStream(terminal.terminalId);
+          }
+          return next;
+        });
+        setTerminalOrder((previous) => {
+          const incomingOrder = terminals.map((terminal) => terminal.terminalId);
+          const merged = [...previous];
+          for (const terminalId of incomingOrder) {
+            if (!merged.includes(terminalId)) {
+              merged.push(terminalId);
+            }
+          }
+          return merged;
+        });
+        if (!activeTerminalId && terminals[0]?.terminalId) {
+          setActiveTerminalId(terminals[0].terminalId);
+        }
+      })
+      .catch(() => undefined);
+  }, [activeTerminalId, connectTerminalStream, workspaceSessionId]);
+
+  const runSearch = useCallback(
+    async (query: string) => {
+      const normalizedQuery = query.trim();
+      if (!workspaceSessionId || !normalizedQuery) {
+        setSearchResults([]);
+        return;
+      }
+
+      setIsSearching(true);
+      setError('');
+
+      try {
+        const payload = await requestJson<WorkspaceSearchPayload>(
+          `${API_BASE_URL}/api/workspace/${encodeURIComponent(workspaceSessionId)}/search`,
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              query: normalizedQuery,
+              caseSensitive: false,
+              regex: false,
+            }),
+          }
+        );
+
+        setSearchResults(payload.matches || []);
+        appendOutput(`Search "${normalizedQuery}" returned ${payload.total} matches`);
+      } catch (searchError) {
+        const message = getErrorMessage(searchError, 'Search failed');
+        setError(message);
+        pushProblem({
+          severity: 'error',
+          source: 'search',
+          message,
+        });
+      } finally {
+        setIsSearching(false);
+      }
+    },
+    [appendOutput, pushProblem, workspaceSessionId]
+  );
+
+  const stageFiles = useCallback(
+    async (paths: string[]) => {
+      if (!workspaceSessionId) return;
+      await requestJson<{ success: boolean }>(
+        `${API_BASE_URL}/api/workspace/${encodeURIComponent(workspaceSessionId)}/stage`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ paths }),
+        }
+      );
+    },
+    [workspaceSessionId]
+  );
+
+  const stageAll = useCallback(async () => {
+    if (!workspaceSessionId) return;
+
+    setGitBusy(true);
+    try {
+      await stageFiles(['*']);
+      appendOutput('Staged all changes');
+      await refreshGitStatus();
+    } catch (gitError) {
+      const message = getErrorMessage(gitError, 'Failed to stage all files');
+      setError(message);
+      pushProblem({
+        severity: 'error',
+        source: 'git',
+        message,
+      });
+    } finally {
+      setGitBusy(false);
+    }
+  }, [appendOutput, pushProblem, refreshGitStatus, stageFiles, workspaceSessionId]);
+
+  const stageSingleFile = useCallback(
+    async (path: string) => {
+      setGitBusy(true);
+      try {
+        await stageFiles([path]);
+        appendOutput(`Staged ${path}`);
+        await refreshGitStatus();
+      } catch (gitError) {
+        const message = getErrorMessage(gitError, `Failed to stage ${path}`);
+        setError(message);
+        pushProblem({
+          severity: 'error',
+          source: 'git',
+          path,
+          message,
+        });
+      } finally {
+        setGitBusy(false);
+      }
+    },
+    [appendOutput, pushProblem, refreshGitStatus, stageFiles]
+  );
+
+  const commitChanges = useCallback(async () => {
+    if (!workspaceSessionId) return;
+
+    const message = commitMessage.trim();
+    if (!message) {
+      setError('Commit message is required.');
+      pushProblem({
+        severity: 'warning',
+        source: 'git',
+        message: 'Commit message is required.',
+      });
+      return;
+    }
+
+    setGitBusy(true);
+    try {
+      await requestJson<{ success: boolean; output?: string }>(
+        `${API_BASE_URL}/api/workspace/${encodeURIComponent(workspaceSessionId)}/commit`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ message }),
+        }
+      );
+
+      setCommitMessage('');
+      appendOutput(`Committed: ${message}`);
+      await refreshGitStatus();
+    } catch (gitError) {
+      const details = getErrorMessage(gitError, 'Commit failed');
+      setError(details);
+      pushProblem({
+        severity: 'error',
+        source: 'git',
+        message: details,
+      });
+    } finally {
+      setGitBusy(false);
+    }
+  }, [appendOutput, commitMessage, pushProblem, refreshGitStatus, workspaceSessionId]);
+
+  const pushChanges = useCallback(async () => {
+    if (!workspaceSessionId) return;
+
+    setGitBusy(true);
+    try {
+      await requestJson<{ success: boolean; output?: string }>(
+        `${API_BASE_URL}/api/workspace/${encodeURIComponent(workspaceSessionId)}/push`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            remote: 'origin',
+            branch: workspaceBranch,
+          }),
+        }
+      );
+
+      appendOutput(`Pushed ${workspaceBranch} to origin`);
+      await refreshGitStatus();
+    } catch (gitError) {
+      const details = getErrorMessage(gitError, 'Push failed');
+      const hint = /non-fast-forward/i.test(details)
+        ? `${details}. Run Sync first, then retry push.`
+        : details;
+
+      setError(hint);
+      pushProblem({
+        severity: 'error',
+        source: 'git',
+        message: hint,
+      });
+    } finally {
+      setGitBusy(false);
+    }
+  }, [appendOutput, pushProblem, refreshGitStatus, workspaceBranch, workspaceSessionId]);
+
+  const syncWorkspace = useCallback(async () => {
+    if (!workspaceSessionId) return;
+
+    setGitBusy(true);
+    try {
+      await requestJson<{ success: boolean }>(
+        `${API_BASE_URL}/api/workspace/${encodeURIComponent(workspaceSessionId)}/sync`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ mode: 'fetch' }),
+        }
+      );
+
+      appendOutput('Synced with origin (fetch)');
+      await refreshGitStatus();
+    } catch (gitError) {
+      const details = getErrorMessage(gitError, 'Sync failed');
+      setError(details);
+      pushProblem({
+        severity: 'error',
+        source: 'git',
+        message: details,
+      });
+    } finally {
+      setGitBusy(false);
+    }
+  }, [appendOutput, pushProblem, refreshGitStatus, workspaceSessionId]);
+
+  const repositoryIdentity = useMemo(() => {
+    const display = (workspaceDisplayName || '').trim();
+    if (workspaceKind === 'repo' && display.includes('/')) {
+      const [derivedOwner, ...derivedRepoParts] = display.split('/');
+      const derivedRepo = derivedRepoParts.join('/');
+      if (derivedOwner && derivedRepo) {
+        return {
+          owner: derivedOwner,
+          repo: derivedRepo,
+        };
+      }
+    }
+
+    return {
+      owner,
+      repo,
+    };
+  }, [owner, repo, workspaceDisplayName, workspaceKind]);
+
+  const analyzeRepository = useCallback(async () => {
+    if (!workspaceSessionId) {
+      return;
+    }
+    if (workspaceKind !== 'repo') {
+      setError('AI repository analysis is only available for repository workspaces.');
       return;
     }
 
     setIsAnalyzing(true);
+    setAnalysisOutput('');
     setError('');
-    setStreamingAnalysis('');
 
     try {
-      const githubToken = localStorage.getItem('github_token');
-      if (!githubToken) {
-        throw new Error('GitHub authentication required. Please sign in with GitHub.');
+      const token = localStorage.getItem('github_token');
+      if (!token) {
+        router.push('/');
+        return;
       }
 
-      const importantFiles = repoContent
-        .filter(file => file.type === 'file' &&
-          (file.name.endsWith('.js') ||
-            file.name.endsWith('.ts') ||
-            file.name.endsWith('.py') ||
-            file.name.endsWith('.java') ||
-            file.name.endsWith('package.json') ||
-            file.name.endsWith('requirements.txt') ||
-            file.name.endsWith('README.md')
-          )
-        )
-        .slice(0, 10);
+      const candidatePaths = allFilePaths
+        .filter((path) => {
+          const extension = getExtension(path);
+          return FILE_EXTENSIONS_FOR_ANALYSIS.has(extension) || path.endsWith('README.md');
+        })
+        .slice(0, 12);
 
-      if (importantFiles.length === 0) {
+      if (candidatePaths.length === 0) {
         throw new Error('No supported files found for analysis');
       }
 
-      console.log(`[Analysis] Analyzing ${importantFiles.length} important files...`);
+      const files = await Promise.all(
+        candidatePaths.map(async (path) => {
+          const payload = await requestJson<WorkspaceFilePayload>(
+            `${API_BASE_URL}/api/workspace/${encodeURIComponent(workspaceSessionId)}/file?path=${encodeURIComponent(
+              path
+            )}`
+          );
 
-      const BATCH_SIZE = 2;
-      const filesWithContent = [];
-
-      for (let i = 0; i < importantFiles.length; i += BATCH_SIZE) {
-        const batch = importantFiles.slice(i, i + BATCH_SIZE);
-        const batchResults = await Promise.all(
-          batch.map(async (file) => {
-            try {
-              const response = await axios.get(
-                `https://api.github.com/repos/${owner}/${repo}/contents/${file.path}`,
-                {
-                  headers: {
-                    'Authorization': `token ${githubToken}`,
-                    'Accept': 'application/vnd.github.v3.raw'
-                  },
-                  responseType: 'text',
-                  timeout: 10000
-                }
-              );
-
-              return {
-                path: file.path,
-                name: file.name,
-                content: response.data || '',
-                language: getFileExtension(file.name) || 'text',
-                size: file.size || 0
-              };
-            } catch (error) {
-              console.error(`[Analysis] Error fetching ${file.path}:`, error);
-              return null;
-            }
-          })
-        );
-
-        filesWithContent.push(...batchResults.filter(Boolean));
-
-        if (i + BATCH_SIZE < importantFiles.length) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-      }
-
-      if (filesWithContent.length === 0) {
-        throw new Error('Failed to fetch any file contents for analysis');
-      }
+          return {
+            path,
+            name: path.split('/').pop() || path,
+            content: payload.content,
+            language: getExtension(path) || 'text',
+            size: payload.size,
+          };
+        })
+      );
 
       const response = await fetch(`${API_BASE_URL}/api/ai/analyze-repo`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${githubToken}`
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          files: filesWithContent,
-          owner,
-          repo
-        })
+          owner: repositoryIdentity.owner,
+          repo: repositoryIdentity.repo,
+          files,
+        }),
       });
 
       if (!response.ok) {
-        throw new Error(`Analysis failed: ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.error || 'Analysis failed');
+        throw new Error(`Analysis failed: ${response.status} ${response.statusText}`);
       }
 
-      setStreamingAnalysis(data.analysis || '');
+      const payload = (await response.json()) as AiAnalysisPayload;
+      if (!payload.success) {
+        throw new Error(payload.error || 'Analysis failed');
+      }
 
-    } catch (err: any) {
-      const errorMessage = err.response?.data?.message ||
-        err.response?.data?.error ||
-        err.message ||
-        'Failed to analyze repository';
-      console.error('[Analysis Error]', errorMessage);
-      setError(`Analysis failed: ${errorMessage}`);
+      setAnalysisOutput(payload.analysis || 'No analysis output received');
+      appendOutput(`AI analysis complete for ${candidatePaths.length} files`);
+    } catch (analysisError) {
+      const message = getErrorMessage(analysisError, 'Repository analysis failed');
+      setError(message);
+      pushProblem({
+        severity: 'error',
+        source: 'analysis',
+        message,
+      });
     } finally {
       setIsAnalyzing(false);
     }
-  };
+  }, [allFilePaths, appendOutput, pushProblem, repositoryIdentity.owner, repositoryIdentity.repo, router, workspaceKind, workspaceSessionId]);
 
-  const fetchRepoContent = useCallback(async (path: string = '') => {
-    if (!owner || !repo) return;
-    try {
-      setIsLoading(true);
-      setError('');
-      const githubToken = localStorage.getItem('github_token');
-      if (!githubToken) {
-        throw new Error('GitHub authentication required. Please sign in with GitHub.');
-      }
+  const openSearchMatch = useCallback(
+    async (match: SearchMatch) => {
+      await openDocument(match.path);
+      setSidebarState((previous) => ({ ...previous, activeView: 'explorer', visible: true }));
+      appendOutput(`Opened ${match.path}:${match.line}:${match.column}`);
+    },
+    [appendOutput, openDocument]
+  );
 
-      console.log(`[Repo] Fetching repository content for path: ${path}`);
+  const runQuickOpenSelection = useCallback(async () => {
+    const selectedPath = quickOpenResults[quickOpen.selectedIndex];
+    if (!selectedPath) return;
 
-      const response = await axios.get(
-        `https://api.github.com/repos/${owner}/${repo}/contents/${path}`,
-        {
-          headers: {
-            'Authorization': `token ${githubToken}`,
-            'Accept': 'application/vnd.github.v3+json',
-          },
-          timeout: 10000
-        }
-      );
+    await openDocument(selectedPath);
+    setQuickOpen({ open: false, query: '', selectedIndex: 0 });
+  }, [openDocument, quickOpen.selectedIndex, quickOpenResults]);
 
-      if (!response.data) {
-        throw new Error('No data received from GitHub API');
-      }
+  const setSidebarView = useCallback((view: SidebarView) => {
+    setSidebarState((previous) => ({
+      ...previous,
+      visible: true,
+      activeView: view,
+    }));
+  }, []);
 
-      if (Array.isArray(response.data)) {
-        setRepoContent(response.data);
-      } else if ('message' in response.data) {
-        throw new Error((response.data as any).message);
-      } else {
-        setRepoContent([response.data]);
-      }
-    } catch (err: any) {
-      const errorMessage = err.response?.data?.message || err.message || 'Failed to load repository content';
-      console.error('[Repo Error]', errorMessage);
-      setError(`Error: ${errorMessage}`);
+  const commandActions = useMemo<CommandAction[]>(
+    () => [
+      {
+        id: 'save-active',
+        label: 'File: Save',
+        keywords: ['save', 'file'],
+        run: () => saveDocument(),
+      },
+      {
+        id: 'save-all',
+        label: 'File: Save All',
+        keywords: ['save', 'all'],
+        run: () => saveAllDocuments(),
+      },
+      {
+        id: 'quick-open',
+        label: 'Go to File: Quick Open',
+        keywords: ['quick', 'open', 'file'],
+        run: () => {
+          setQuickOpen({ open: true, query: '', selectedIndex: 0 });
+          setCommandPalette({ open: false, query: '', selectedIndex: 0 });
+        },
+      },
+      {
+        id: 'toggle-sidebar',
+        label: 'View: Toggle Primary Side Bar',
+        keywords: ['toggle', 'sidebar'],
+        run: () => setSidebarState((previous) => ({ ...previous, visible: !previous.visible })),
+      },
+      {
+        id: 'toggle-panel',
+        label: 'View: Toggle Panel',
+        keywords: ['toggle', 'panel'],
+        run: () => setPanelState((previous) => ({ ...previous, visible: !previous.visible })),
+      },
+      {
+        id: 'open-terminal',
+        label: 'Terminal: New Terminal',
+        keywords: ['terminal', 'shell'],
+        run: () => ensureTerminalSession(),
+      },
+      {
+        id: 'explorer-view',
+        label: 'View: Show Explorer',
+        keywords: ['explorer', 'sidebar'],
+        run: () => setSidebarView('explorer'),
+      },
+      {
+        id: 'search-view',
+        label: 'View: Show Search',
+        keywords: ['search', 'sidebar'],
+        run: () => setSidebarView('search'),
+      },
+      {
+        id: 'stage-all',
+        label: 'Source Control: Stage All',
+        keywords: ['git', 'stage'],
+        run: () => stageAll(),
+      },
+      {
+        id: 'commit',
+        label: 'Source Control: Commit',
+        keywords: ['git', 'commit'],
+        run: () => commitChanges(),
+      },
+      {
+        id: 'push',
+        label: 'Source Control: Push',
+        keywords: ['git', 'push'],
+        run: () => pushChanges(),
+      },
+      {
+        id: 'analyze-repo',
+        label: 'AI: Run Repository Analysis',
+        keywords: ['ai', 'analysis', 'repository'],
+        run: () => analyzeRepository(),
+      },
+    ],
+    [
+      analyzeRepository,
+      commitChanges,
+      ensureTerminalSession,
+      pushChanges,
+      saveAllDocuments,
+      saveDocument,
+      setSidebarView,
+      stageAll,
+    ]
+  );
 
-      if (err.response?.status === 401) {
-        localStorage.removeItem('github_token');
-        router.push('/');
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  }, [owner, repo, router]);
+  const filteredCommandActions = useMemo(() => {
+    const query = commandPalette.query.trim().toLowerCase();
+    if (!query) return commandActions;
+
+    return commandActions.filter((action) => {
+      if (action.label.toLowerCase().includes(query)) return true;
+      return action.keywords.some((keyword) => keyword.includes(query));
+    });
+  }, [commandActions, commandPalette.query]);
+
+  const executeCommand = useCallback(
+    async (action: CommandAction | undefined) => {
+      if (!action) return;
+      await action.run();
+      setCommandPalette({ open: false, query: '', selectedIndex: 0 });
+    },
+    []
+  );
+
+  const handleGenerateVisualization = useCallback(
+    async (node: FileNode, type: 'flowchart' | 'mindmap') => {
+      if (node.type !== 'file') return;
+      await openDocument(node.id);
+      setVisualizationTrigger({ type, timestamp: Date.now() });
+    },
+    [openDocument]
+  );
 
   useEffect(() => {
-    fetchRepoContent('');
-  }, [fetchRepoContent]);
+    if (quickOpen.open) {
+      const timeout = setTimeout(() => quickOpenInputRef.current?.focus(), 10);
+      return () => clearTimeout(timeout);
+    }
 
-  const fetchFileContent = useCallback(async (file: GitHubFile) => {
-    try {
-      setIsLoadingFile(true);
-      setError('');
-      const githubToken = localStorage.getItem('github_token');
-      if (!githubToken) {
-        throw new Error('GitHub authentication required');
+    return undefined;
+  }, [quickOpen.open]);
+
+  useEffect(() => {
+    if (commandPalette.open) {
+      const timeout = setTimeout(() => commandPaletteInputRef.current?.focus(), 10);
+      return () => clearTimeout(timeout);
+    }
+
+    return undefined;
+  }, [commandPalette.open]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const mod = event.metaKey || event.ctrlKey;
+
+      if (quickOpen.open) {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          setQuickOpen({ open: false, query: '', selectedIndex: 0 });
+          return;
+        }
+
+        if (event.key === 'ArrowDown') {
+          event.preventDefault();
+          setQuickOpen((previous) => ({
+            ...previous,
+            selectedIndex: Math.min(previous.selectedIndex + 1, Math.max(0, quickOpenResults.length - 1)),
+          }));
+          return;
+        }
+
+        if (event.key === 'ArrowUp') {
+          event.preventDefault();
+          setQuickOpen((previous) => ({
+            ...previous,
+            selectedIndex: Math.max(previous.selectedIndex - 1, 0),
+          }));
+          return;
+        }
+
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          void runQuickOpenSelection();
+          return;
+        }
       }
 
-      const response = await axios.get(
-        `https://api.github.com/repos/${owner}/${repo}/contents/${file.path}`,
-        {
-          headers: {
-            'Authorization': `token ${githubToken}`,
-            'Accept': 'application/vnd.github.v3+json',
-          },
-          timeout: 10000
+      if (commandPalette.open) {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          setCommandPalette({ open: false, query: '', selectedIndex: 0 });
+          return;
         }
-      );
 
-      if (response.data.size > 1024 * 100) {
-        setFileContent(`// File is too large to display (${(response.data.size / 1024).toFixed(1)}KB)`);
-        setSelectedFile(file);
+        if (event.key === 'ArrowDown') {
+          event.preventDefault();
+          setCommandPalette((previous) => ({
+            ...previous,
+            selectedIndex: Math.min(previous.selectedIndex + 1, Math.max(0, filteredCommandActions.length - 1)),
+          }));
+          return;
+        }
+
+        if (event.key === 'ArrowUp') {
+          event.preventDefault();
+          setCommandPalette((previous) => ({
+            ...previous,
+            selectedIndex: Math.max(previous.selectedIndex - 1, 0),
+          }));
+          return;
+        }
+
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          void executeCommand(filteredCommandActions[commandPalette.selectedIndex]);
+          return;
+        }
+      }
+
+      if (!mod) {
         return;
       }
 
-      if (response.data.content && response.data.encoding === 'base64') {
-        const decodedContent = atob(response.data.content.replace(/\n/g, ''));
-        setFileContent(decodedContent);
-      } else {
-        setFileContent('// Unable to decode file content');
+      const key = event.key.toLowerCase();
+
+      if (key === 's') {
+        event.preventDefault();
+        if (event.shiftKey) {
+          void saveAllDocuments();
+        } else {
+          void saveDocument();
+        }
+        return;
       }
 
-      setSelectedFile(file);
-    } catch (err: any) {
-      console.error('[File Error]', err);
-      const errorMessage = err.response?.data?.message || err.message || 'Failed to load file content';
-      setError(`Error: ${errorMessage}`);
-      setFileContent(`// Error loading file: ${errorMessage}`);
-    } finally {
-      setIsLoadingFile(false);
-    }
-  }, [owner, repo]);
+      if (key === 'p') {
+        event.preventDefault();
 
-  const handleItemClick = useCallback((item: GitHubFile) => {
-    if (item.type === 'dir') {
-      setExpandedDirs(prev => ({
-        ...prev,
-        [item.path]: !prev[item.path]
-      }));
-      fetchRepoContent(item.path);
-    } else {
-      fetchFileContent(item);
-    }
-  }, [fetchRepoContent, fetchFileContent]);
+        if (event.shiftKey) {
+          setCommandPalette({ open: true, query: '', selectedIndex: 0 });
+          setQuickOpen({ open: false, query: '', selectedIndex: 0 });
+        } else {
+          setQuickOpen({ open: true, query: '', selectedIndex: 0 });
+          setCommandPalette({ open: false, query: '', selectedIndex: 0 });
+        }
+        return;
+      }
 
-  const convertToFileNodes = (githubFiles: GitHubFile[]): FileNode[] => {
-    return githubFiles.map(file => ({
-      id: file.path, // Use path instead of sha - paths are unique within a repo tree
-      name: file.name,
-      type: file.type === 'dir' ? 'directory' : 'file'
-    }));
-  };
+      if (key === 'b') {
+        event.preventDefault();
+        setSidebarState((previous) => ({ ...previous, visible: !previous.visible }));
+        return;
+      }
 
-  const convertFileToNode = (file: GitHubFile | null): FileNode | null => {
-    if (!file) return null;
-    return {
-      id: file.path, // Use path instead of sha - paths are unique within a repo tree
-      name: file.name,
-      type: file.type === 'dir' ? 'directory' : 'file'
+      if (key === 'j') {
+        event.preventDefault();
+        setPanelState((previous) => ({ ...previous, visible: !previous.visible }));
+        return;
+      }
+
+      if (key === '`') {
+        event.preventDefault();
+        void ensureTerminalSession();
+        return;
+      }
+
+      if (key === 'w') {
+        event.preventDefault();
+        if (activeTabPath) {
+          closeTab(activeTabPath);
+        }
+        return;
+      }
+
+      if (event.shiftKey && key === 'e') {
+        event.preventDefault();
+        setSidebarView('explorer');
+        return;
+      }
+
+      if (event.shiftKey && key === 'f') {
+        event.preventDefault();
+        setSidebarView('search');
+      }
     };
-  };
 
-  const handleFileNodeClick = (node: FileNode) => {
-    const githubFile = repoContent.find(f => f.path === node.id);
-    if (githubFile) {
-      handleItemClick(githubFile);
-    }
-  };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [
+    activeTabPath,
+    closeTab,
+    commandPalette.open,
+    commandPalette.selectedIndex,
+    ensureTerminalSession,
+    executeCommand,
+    filteredCommandActions,
+    quickOpen.open,
+    quickOpenResults.length,
+    runQuickOpenSelection,
+    saveAllDocuments,
+    saveDocument,
+    setSidebarView,
+  ]);
 
-  const handleDirToggle = (nodeId: string) => {
-    const dir = repoContent.find(f => f.path === nodeId);
-    if (dir && dir.type === 'dir') {
-      setExpandedDirs(prev => ({
-        ...prev,
-        [dir.path]: !prev[dir.path]
-      }));
-      fetchRepoContent(dir.path);
-    }
-  };
+  const fileBreadcrumb = activeTabPath ? activeTabPath.split('/') : [];
+  const isSessionProxyRoute = owner === 'workspace' && repo === 'session';
+  const workspacePrimaryLabel =
+    workspaceKind === 'local'
+      ? 'Local'
+      : isSessionProxyRoute
+      ? 'Repository'
+      : owner || 'Repository';
+  const workspaceSecondaryLabel =
+    workspaceKind === 'local'
+      ? workspaceDisplayName || 'Workspace'
+      : workspaceDisplayName || (isSessionProxyRoute ? 'Workspace' : repo || 'Repository');
+  const workspaceProviderLabel = workspaceKind === 'local'
+    ? 'local'
+    : workspaceProvider || 'github';
+  const terminalTabs = useMemo(
+    () => terminalOrder
+      .map((terminalId) => {
+        const session = terminalSessions[terminalId];
+        if (!session) return null;
+        return {
+          id: session.id,
+          name: session.name,
+          connected: session.connected,
+        };
+      })
+      .filter(Boolean) as Array<{ id: string; name: string; connected: boolean }>,
+    [terminalOrder, terminalSessions]
+  );
 
-  const handleGenerateVisualization = (node: FileNode, type: 'flowchart' | 'mindmap') => {
-    // Find the GitHub file
-    const githubFile = repoContent.find(f => f.path === node.id);
-    if (githubFile && githubFile.type === 'file') {
-      // Ensure file is selected and content is loaded
-      if (!selectedFile || selectedFile.path !== githubFile.path) {
-        handleItemClick(githubFile);
-      }
-      // Trigger visualization generation after a short delay to ensure content is loaded
-      setTimeout(() => {
-        setVisualizationTrigger({ type, timestamp: Date.now() });
-      }, 300);
-    }
-  };
+  const headerContent = (
+    <header className="h-10 border-b border-[var(--cm-border)] bg-[rgba(12,18,28,0.95)] px-3 flex items-center justify-between gap-3">
+      <div className="flex items-center gap-2 text-xs min-w-0">
+        <span className="text-[var(--cm-text-muted)] truncate">{workspacePrimaryLabel}</span>
+        <span className="text-[10px] uppercase tracking-[0.08em] px-1.5 py-0.5 rounded border border-[var(--cm-border)] text-[var(--cm-text-muted)]">
+          {workspaceProviderLabel}
+        </span>
+        <ChevronRight size={12} className="text-[var(--cm-text-muted)] shrink-0" />
+        <span className="text-[var(--cm-text-muted)] truncate">{workspaceSecondaryLabel}</span>
+        {fileBreadcrumb.map((segment, index) => (
+          <span key={`${segment}-${index}`} className="flex items-center gap-2 min-w-0">
+            <ChevronRight size={12} className="text-[var(--cm-text-muted)] shrink-0" />
+            <span
+              className={
+                index === fileBreadcrumb.length - 1
+                  ? 'text-[var(--cm-text)] truncate'
+                  : 'text-[var(--cm-text-muted)] truncate'
+              }
+            >
+              {segment}
+            </span>
+          </span>
+        ))}
+      </div>
 
-  const tabs: EditorTab[] = selectedFile ? [{
-    id: selectedFile.path, // Use path instead of sha for consistency
-    name: selectedFile.name,
-    isDirty: false
-  }] : [];
+      <div className="flex items-center gap-1.5">
+        <button
+          onClick={() => void analyzeRepository()}
+          disabled={workspaceKind !== 'repo' || isAnalyzing || allFilePaths.length === 0}
+          className="h-7 px-2.5 rounded-md cm-btn-primary text-[10px] font-semibold uppercase tracking-[0.06em] flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isAnalyzing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+          {isAnalyzing ? 'Analyzing...' : 'Run AI Analysis'}
+        </button>
 
-  if (isLoading) {
+        <button
+          onClick={() => void saveDocument()}
+          className="h-7 px-2.5 rounded-md cm-btn-ghost text-[10px] font-semibold uppercase tracking-[0.06em] flex items-center gap-1"
+          title="Save (Cmd/Ctrl+S)"
+        >
+          <Save size={12} />
+          Save
+        </button>
+
+        <button
+          onClick={() => setQuickOpen({ open: true, query: '', selectedIndex: 0 })}
+          className="h-7 w-7 rounded-md cm-btn-ghost flex items-center justify-center"
+          title="Quick Open (Cmd/Ctrl+P)"
+        >
+          <Search size={14} />
+        </button>
+
+        <button
+          onClick={() => setCommandPalette({ open: true, query: '', selectedIndex: 0 })}
+          className="h-7 w-7 rounded-md cm-btn-ghost flex items-center justify-center"
+          title="Command Palette (Cmd/Ctrl+Shift+P)"
+        >
+          <Command size={14} />
+        </button>
+
+        <button
+          onClick={() => void ensureTerminalSession()}
+          className="h-7 w-7 rounded-md cm-btn-ghost flex items-center justify-center"
+          title="New Terminal"
+        >
+          <TerminalSquare size={14} />
+        </button>
+
+        <button className="h-7 w-7 rounded-md cm-btn-ghost flex items-center justify-center" title="Settings">
+          <Settings2 size={14} />
+        </button>
+      </div>
+    </header>
+  );
+
+  if (isWorkspaceLoading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-[#0d1117]">
+      <div className="flex items-center justify-center h-screen cm-shell">
         <div className="text-center">
-          <Loader2 className="w-12 h-12 text-[#2f81f7] animate-spin mx-auto mb-4" />
-          <p className="text-[#7d8590]">Loading repository...</p>
+          <Loader2 className="w-12 h-12 text-[var(--cm-primary)] animate-spin mx-auto mb-4" />
+          <p className="text-[var(--cm-text-muted)]">Opening workspace...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <IDELayout
-      files={convertToFileNodes(repoContent)}
-      expandedDirs={expandedDirs}
-      onFileClick={handleFileNodeClick}
-      onDirToggle={handleDirToggle}
-      selectedFile={convertFileToNode(selectedFile)}
-      tabs={tabs}
-      activeTabId={selectedFile?.path || ''}
-      onTabClick={() => { }}
-      onTabClose={() => {
-        setSelectedFile(null);
-        setFileContent('');
-      }}
-      onGenerateVisualization={handleGenerateVisualization}
-      selectedFileContent={selectedFile ? fileContent : null}
-      statusBarProps={{
-        language: selectedFile ? getLanguage(selectedFile.name) : 'plaintext',
-        branch: 'main',
-        aiStatus: isAnalyzing ? 'processing' : 'ready'
-      }}
-      analysisPanel={streamingAnalysis || isAnalyzing ? {
-        content: streamingAnalysis,
-        isAnalyzing: isAnalyzing,
-        onClose: () => {
-          setStreamingAnalysis('');
-          setIsAnalyzing(false);
+    <>
+      <IDELayout
+        files={workspaceTree}
+        expandedDirs={expandedDirs}
+        onFileClick={(file) => {
+          if (file.type === 'directory') {
+            setExpandedDirs((previous) => ({
+              ...previous,
+              [file.id]: !previous[file.id],
+            }));
+            return;
+          }
+          void openDocument(file.id);
+        }}
+        onDirToggle={(path) => {
+          setExpandedDirs((previous) => ({
+            ...previous,
+            [path]: !previous[path],
+          }));
+        }}
+        selectedFile={selectedFileNode}
+        tabs={tabs}
+        headerContent={headerContent}
+        activeTabId={activeTabPath}
+        onTabClick={(tabId) => setActiveTabPath(tabId)}
+        onTabClose={closeTab}
+        onGenerateVisualization={(node, type) => void handleGenerateVisualization(node, type)}
+        selectedFileContent={activeDocument?.content || null}
+        sidebarState={sidebarState}
+        onSidebarStateChange={setSidebarState}
+        onSidebarResize={(width) =>
+          setSidebarState((previous) => ({
+            ...previous,
+            width,
+          }))
         }
-      } : undefined}
-    >
-      <div className="h-full flex flex-col overflow-hidden">
-        {/* Error Message */}
-        {error && (
-          <div className="p-3 bg-red-500/20 border border-red-500/50 rounded text-red-300 text-sm m-4 flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 flex-shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        {/* AI Analysis Button Bar */}
-        <div className="p-2 border-b border-[#30363d] bg-[#1c2128]">
-          <button
-            onClick={analyzeRepository}
-            disabled={isAnalyzing || repoContent.length === 0}
-            className="w-full px-4 py-1.5 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 disabled:from-gray-600 disabled:to-gray-600 text-white rounded flex items-center justify-center gap-2 transition-all font-semibold text-xs uppercase tracking-wide disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isAnalyzing ? (
-              <>
-                <Loader2 size={14} className="animate-spin" />
-                Analyzing Repository...
-              </>
-            ) : (
-              <>
-                <Sparkles size={14} />
-                Run AI Repository Analysis
-              </>
+        panelState={panelState}
+        onPanelStateChange={setPanelState}
+        onPanelResize={(height) =>
+          setPanelState((previous) => ({
+            ...previous,
+            height,
+          }))
+        }
+        searchViewProps={{
+          query: searchQuery,
+          isSearching,
+          results: searchResults,
+          onQueryChange: (value) => {
+            setSearchQuery(value);
+            setSearchResults([]);
+          },
+          onSearch: (query) => void runSearch(query),
+          onSelectResult: (result) => void openSearchMatch(result),
+        }}
+        gitViewProps={{
+          status: gitStatus,
+          commitMessage,
+          isBusy: gitBusy,
+          onCommitMessageChange: setCommitMessage,
+          onStageAll: () => void stageAll(),
+          onStageFile: (path) => void stageSingleFile(path),
+          onCommit: () => void commitChanges(),
+          onPush: () => void pushChanges(),
+          onSync: () => void syncWorkspace(),
+        }}
+        extensionsViewProps={{
+          workspaceSessionId,
+        }}
+        panelContent={{
+          problems,
+          outputLines,
+          debugLines,
+          terminalLines: activeTerminalSession?.lines || [],
+          terminalConnected: activeTerminalSession?.connected || false,
+          terminalInput: activeTerminalSession?.input || '',
+          onTerminalInputChange: setActiveTerminalInput,
+          onTerminalSubmit: () => void sendTerminalInput(),
+          terminalTabs,
+          activeTerminalId,
+          onTerminalTabSelect: setActiveTerminalId,
+          onTerminalCreate: () => void ensureTerminalSession(),
+          onTerminalClose: (terminalId) => {
+            void closeTerminalSession(terminalId);
+          },
+        }}
+        statusBarProps={{
+          language: activeDocument?.language || 'plaintext',
+          branch: workspaceBranch,
+          aiStatus: isAnalyzing ? 'processing' : 'ready',
+          workspaceKind,
+          terminalCount: terminalOrder.length,
+          extensionHostStatus: 'off',
+        }}
+        analysisPanel={analysisOutput || isAnalyzing ? {
+          content: analysisOutput,
+          isAnalyzing,
+          onClose: () => {
+            setAnalysisOutput('');
+            setIsAnalyzing(false);
+          },
+        } : undefined}
+      >
+        <div className="h-full flex flex-row overflow-hidden">
+          <div className="flex-1 flex flex-col border-r border-[var(--cm-border)] min-w-0">
+            {error && (
+              <div className="mx-4 mt-3 p-3 bg-red-500/15 border border-red-400/45 rounded-lg text-red-200 text-sm flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span className="truncate">{error}</span>
+                <button
+                  onClick={() => setError('')}
+                  className="ml-auto h-5 w-5 rounded hover:bg-red-500/20 flex items-center justify-center"
+                >
+                  <X size={12} />
+                </button>
+              </div>
             )}
-          </button>
-        </div>
 
-        {/* --- SPLIT VIEW AREA (Editor + Visualizer) --- */}
-        <div className="flex-1 flex flex-row overflow-hidden">
-          
-          {/* LEFT: Code Editor */}
-          <div className="flex-1 flex flex-col border-r border-[#30363d] min-w-0">
-            {selectedFile ? (
+            {activeDocument ? (
               <CodeEditor
-                code={fileContent}
-                language={getLanguage(selectedFile.name)}
+                code={activeDocument.content}
+                language={activeDocument.language}
                 height="100%"
-                onChange={(newContent) => setFileContent(newContent || '')}
+                onChange={onEditorChange}
                 readOnly={false}
               />
             ) : (
-              <div className="flex items-center justify-center h-full text-center flex-col opacity-50">
-                <Code className="w-16 h-16 text-[#7d8590] mb-4" />
-                <p className="text-[#7d8590]">No file selected</p>
+              <div className="flex-1 flex items-center justify-center h-full text-center flex-col opacity-70 cm-editor">
+                {isFileLoading ? (
+                  <Loader2 className="w-12 h-12 text-[var(--cm-primary)] animate-spin mb-4" />
+                ) : (
+                  <Code className="w-16 h-16 text-[var(--cm-text-muted)] mb-4" />
+                )}
+                <p className="text-[var(--cm-text-muted)] text-sm">
+                  {isFileLoading ? 'Loading file...' : 'No file selected'}
+                </p>
               </div>
             )}
           </div>
 
-          {/* RIGHT: Mind Map / Visualization Panel */}
-          {/* Fixed width of 400px (or utilize resizing libraries in future) */}
-          <div className="w-[400px] flex-shrink-0 bg-[#1e1e1e] flex flex-col border-l border-[#30363d]">
-             {/* Pass the ACTIVE file content to the Visualizer */}
-             <MindMapView 
-               selectedFileContent={selectedFile ? fileContent : null} 
-               triggerGeneration={visualizationTrigger}
-             />
+          <aside className="hidden xl:flex w-[400px] flex-shrink-0 cm-shell flex-col border-l border-[var(--cm-border)]">
+            <MindMapView
+              selectedFileContent={activeDocument?.content || null}
+              triggerGeneration={visualizationTrigger}
+            />
+          </aside>
+        </div>
+      </IDELayout>
+
+      {quickOpen.open && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-[2px] flex items-start justify-center pt-[12vh] px-4">
+          <div className="w-full max-w-2xl cm-card rounded-xl overflow-hidden border border-[var(--cm-border)]">
+            <div className="h-11 px-3 border-b border-[var(--cm-border)] bg-[rgba(2,6,23,0.55)] flex items-center gap-2">
+              <Search size={14} className="text-[var(--cm-text-muted)]" />
+              <input
+                ref={quickOpenInputRef}
+                value={quickOpen.query}
+                onChange={(event) =>
+                  setQuickOpen((previous) => ({
+                    ...previous,
+                    query: event.target.value,
+                    selectedIndex: 0,
+                  }))
+                }
+                placeholder="Type to quickly open files"
+                className="flex-1 bg-transparent text-sm text-slate-100 placeholder:text-[var(--cm-text-muted)] focus:outline-none"
+              />
+              <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--cm-text-muted)]">Quick Open</span>
+            </div>
+
+            <div className="max-h-[55vh] overflow-y-auto p-2">
+              {quickOpenResults.length === 0 && (
+                <div className="text-sm text-[var(--cm-text-muted)] p-4">No matching files.</div>
+              )}
+
+              {quickOpenResults.map((path, index) => (
+                <button
+                  key={path}
+                  onClick={() => {
+                    setQuickOpen((previous) => ({
+                      ...previous,
+                      selectedIndex: index,
+                    }));
+                    void runQuickOpenSelection();
+                  }}
+                  className={`w-full text-left px-3 py-2 rounded-md text-sm cm-mono ${
+                    quickOpen.selectedIndex === index
+                      ? 'bg-[rgba(14,165,233,0.2)] text-[var(--cm-primary)]'
+                      : 'text-[var(--cm-text)] hover:bg-[rgba(148,163,184,0.12)]'
+                  }`}
+                >
+                  {path}
+                </button>
+              ))}
+            </div>
+
+            <div className="h-8 border-t border-[var(--cm-border)] px-3 text-[11px] text-[var(--cm-text-muted)] flex items-center justify-between">
+              <span>Enter: open file</span>
+              <span>Esc: close</span>
+            </div>
           </div>
 
+          <button
+            aria-label="Close quick open"
+            onClick={() => setQuickOpen({ open: false, query: '', selectedIndex: 0 })}
+            className="absolute inset-0 -z-10"
+          />
         </div>
-      </div>
-    </IDELayout>
+      )}
+
+      {commandPalette.open && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-[2px] flex items-start justify-center pt-[12vh] px-4">
+          <div className="w-full max-w-2xl cm-card rounded-xl overflow-hidden border border-[var(--cm-border)]">
+            <div className="h-11 px-3 border-b border-[var(--cm-border)] bg-[rgba(2,6,23,0.55)] flex items-center gap-2">
+              <Command size={14} className="text-[var(--cm-text-muted)]" />
+              <input
+                ref={commandPaletteInputRef}
+                value={commandPalette.query}
+                onChange={(event) =>
+                  setCommandPalette((previous) => ({
+                    ...previous,
+                    query: event.target.value,
+                    selectedIndex: 0,
+                  }))
+                }
+                placeholder="Type a command"
+                className="flex-1 bg-transparent text-sm text-slate-100 placeholder:text-[var(--cm-text-muted)] focus:outline-none"
+              />
+              <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--cm-text-muted)]">Command Palette</span>
+            </div>
+
+            <div className="max-h-[55vh] overflow-y-auto p-2">
+              {filteredCommandActions.length === 0 && (
+                <div className="text-sm text-[var(--cm-text-muted)] p-4">No commands found.</div>
+              )}
+
+              {filteredCommandActions.map((action, index) => (
+                <button
+                  key={action.id}
+                  onClick={() => void executeCommand(action)}
+                  className={`w-full text-left px-3 py-2 rounded-md text-sm flex items-center justify-between ${
+                    commandPalette.selectedIndex === index
+                      ? 'bg-[rgba(14,165,233,0.2)] text-[var(--cm-primary)]'
+                      : 'text-[var(--cm-text)] hover:bg-[rgba(148,163,184,0.12)]'
+                  }`}
+                >
+                  <span>{action.label}</span>
+                  <Check size={12} className={commandPalette.selectedIndex === index ? 'opacity-90' : 'opacity-0'} />
+                </button>
+              ))}
+            </div>
+
+            <div className="h-8 border-t border-[var(--cm-border)] px-3 text-[11px] text-[var(--cm-text-muted)] flex items-center justify-between">
+              <span>Enter: run command</span>
+              <span>Esc: close</span>
+            </div>
+          </div>
+
+          <button
+            aria-label="Close command palette"
+            onClick={() => setCommandPalette({ open: false, query: '', selectedIndex: 0 })}
+            className="absolute inset-0 -z-10"
+          />
+        </div>
+      )}
+    </>
   );
 }

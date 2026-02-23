@@ -1,111 +1,141 @@
 'use client';
 
-import { GitBranch, GitCommit, GitPullRequest } from 'lucide-react';
+import { useMemo } from 'react';
+import { GitBranch, GitCommit, Upload, RefreshCcw, Plus, ListChecks } from 'lucide-react';
 
-export default function GitView() {
+export interface GitStatusPayload {
+  branch: string;
+  staged: string[];
+  unstaged: string[];
+  untracked: string[];
+}
+
+interface GitViewProps {
+  status: GitStatusPayload | null;
+  commitMessage: string;
+  isBusy?: boolean;
+  onCommitMessageChange: (value: string) => void;
+  onStageAll: () => void;
+  onStageFile: (path: string) => void;
+  onCommit: () => void;
+  onPush: () => void;
+  onSync: () => void;
+}
+
+export default function GitView({
+  status,
+  commitMessage,
+  isBusy = false,
+  onCommitMessageChange,
+  onStageAll,
+  onStageFile,
+  onCommit,
+  onPush,
+  onSync,
+}: GitViewProps) {
+  const stagedCount = status?.staged.length || 0;
+  const unstagedCount = (status?.unstaged.length || 0) + (status?.untracked.length || 0);
+
+  const combinedUnstaged = useMemo(() => {
+    const modified = status?.unstaged || [];
+    const untracked = (status?.untracked || []).filter((item) => !modified.includes(item));
+    return [...modified, ...untracked];
+  }, [status]);
+
   return (
-    <div className="h-full flex flex-col bg-[#252526] p-3">
-      <style jsx>{`
-        .git-section {
-          margin-bottom: 16px;
-        }
-
-        .section-header {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          padding: 8px 0;
-          margin-bottom: 8px;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-          font-size: 12px;
-          font-weight: 600;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-          color: #858585;
-          transition: all 0.2s ease;
-        }
-
-        .section-header:hover {
-          color: #cccccc;
-        }
-
-        .git-item {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          padding: 6px 8px;
-          border-radius: 4px;
-          font-size: 12px;
-          color: #cccccc;
-          transition: all 0.2s ease;
-          cursor: pointer;
-        }
-
-        .git-item:hover {
-          background: rgba(255, 255, 255, 0.08);
-        }
-
-        .branch-name {
-          font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-          color: #0ea5e9;
-          font-weight: 500;
-        }
-
-        .badge {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          padding: 2px 6px;
-          background: rgba(14, 165, 233, 0.2);
-          color: #0ea5e9;
-          border-radius: 3px;
-          font-size: 10px;
-          font-weight: 600;
-        }
-      `}</style>
-
-      <div className="git-section">
-        <div className="section-header">
-          <GitBranch size={14} />
-          Current Branch
+    <div className="h-full cm-sidebar p-2 text-[var(--cm-text)] overflow-y-auto">
+      <section className="mb-3">
+        <h3 className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--cm-text-muted)] border-b border-[var(--cm-border)] pb-2 mb-2">
+          <GitBranch size={12} />
+          Source Control
+        </h3>
+        <div className="flex items-center gap-2 px-2 h-7 rounded bg-[rgba(79,142,247,0.13)] text-[11px] mb-2">
+          <span className="h-2 w-2 rounded-full bg-[var(--cm-primary)]" />
+          <span className="cm-mono text-[var(--cm-primary)]">{status?.branch || 'main'}</span>
+          <span className="ml-auto text-[10px] uppercase tracking-[0.08em] text-[var(--cm-text-muted)]">
+            {stagedCount} staged / {unstagedCount} changed
+          </span>
         </div>
-        <div className="git-item">
-          <div className="w-3 h-3 rounded-full bg-[#0ea5e9]" />
-          <span className="branch-name">main</span>
-          <div className="ml-auto badge">Local</div>
-        </div>
-      </div>
 
-      <div className="git-section">
-        <div className="section-header">
-          <GitCommit size={14} />
-          Recent Commits
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            onClick={onSync}
+            disabled={isBusy}
+            className="h-7 rounded cm-btn-ghost text-[11px] flex items-center justify-center gap-1 disabled:opacity-50"
+          >
+            <RefreshCcw size={12} />
+            Sync
+          </button>
+          <button
+            onClick={onPush}
+            disabled={isBusy}
+            className="h-7 rounded cm-btn-ghost text-[11px] flex items-center justify-center gap-1 disabled:opacity-50"
+          >
+            <Upload size={12} />
+            Push
+          </button>
         </div>
-        <div className="space-y-2">
-          <div className="git-item">
-            <span className="text-[#858585]">feat:</span>
-            <span>Add IDE enhancements</span>
-          </div>
-          <div className="git-item">
-            <span className="text-[#858585]">fix:</span>
-            <span>Update component styling</span>
-          </div>
-          <div className="git-item">
-            <span className="text-[#858585]">docs:</span>
-            <span>Update README</span>
-          </div>
-        </div>
-      </div>
+      </section>
 
-      <div className="git-section">
-        <div className="section-header">
-          <GitPullRequest size={14} />
-          Pull Requests
+      <section className="mb-3">
+        <h3 className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--cm-text-muted)] border-b border-[var(--cm-border)] pb-2 mb-2">
+          <ListChecks size={12} />
+          Changes
+        </h3>
+        <button
+          onClick={onStageAll}
+          disabled={isBusy}
+          className="w-full h-7 rounded cm-btn-ghost text-[11px] flex items-center justify-center gap-1 mb-2 disabled:opacity-50"
+        >
+          <Plus size={12} />
+          Stage All
+        </button>
+        <div className="space-y-1 max-h-56 overflow-y-auto pr-0.5">
+          {combinedUnstaged.length === 0 && (
+            <div className="text-[11px] text-[var(--cm-text-muted)] px-2 py-2 rounded bg-[rgba(8,12,20,0.72)]">
+              No unstaged changes.
+            </div>
+          )}
+          {combinedUnstaged.map((filePath) => (
+            <div
+              key={filePath}
+              className="px-2 py-1 rounded bg-[rgba(8,12,20,0.76)] border border-[var(--cm-border)]"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] truncate flex-1">{filePath}</span>
+                <button
+                  onClick={() => onStageFile(filePath)}
+                  disabled={isBusy}
+                  className="h-5 px-2 rounded text-[10px] cm-btn-ghost disabled:opacity-50"
+                >
+                  Stage
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
-        <div className="text-[#858585] text-[12px] px-2 py-4">
-          No open pull requests
-        </div>
-      </div>
+      </section>
+
+      <section>
+        <h3 className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--cm-text-muted)] border-b border-[var(--cm-border)] pb-2 mb-2">
+          <GitCommit size={12} />
+          Commit
+        </h3>
+        <textarea
+          value={commitMessage}
+          onChange={(event) => onCommitMessageChange(event.target.value)}
+          placeholder="Commit message"
+          className="w-full min-h-20 rounded bg-[rgba(8,12,20,0.84)] border border-[var(--cm-border)] px-2 py-2 text-[11px] text-[var(--cm-text)] placeholder:text-[var(--cm-text-muted)] focus:outline-none focus:border-[var(--cm-primary)]"
+        />
+        <button
+          onClick={onCommit}
+          disabled={isBusy}
+          className="w-full h-7 mt-2 rounded cm-btn-primary text-[11px] font-semibold flex items-center justify-center gap-1 disabled:opacity-50"
+        >
+          <GitCommit size={12} />
+          Commit
+        </button>
+      </section>
     </div>
   );
 }
