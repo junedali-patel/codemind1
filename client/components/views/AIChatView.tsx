@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/ban-ts-comment, no-var, @typescript-eslint/no-unused-vars, react-hooks/exhaustive-deps */
 'use client';
 
-import { Send, Loader, Copy, Mic, MicOff } from 'lucide-react';
+import { Send, Loader, Copy, Mic, MicOff } from '@/lib/icons';
 import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";

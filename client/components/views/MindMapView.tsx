@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Activity, AlertCircle, FileCode, GitBranch, Network } from 'lucide-react';
+import { Activity, AlertCircle, FileCode, GitBranch, Network } from '@/lib/icons';
 import MermaidChart from '../MermaidChart';
 
 interface MindMapViewProps {

@@ -9,13 +9,14 @@ import {
   Code,
   Command,
   Loader2,
+  PanelLeft,
   Save,
   Search,
   Settings2,
   Sparkles,
   TerminalSquare,
   X,
-} from 'lucide-react';
+} from '@/lib/icons';
 import CodeEditor from '@/components/CodeEditor';
 import IDELayout, {
   PanelState,
@@ -130,6 +131,22 @@ interface CommandAction {
   label: string;
   keywords: string[];
   run: () => void | Promise<void>;
+}
+
+type TopMenuId = 'file' | 'edit' | 'view' | 'terminal' | 'help';
+
+interface TopMenuAction {
+  id: string;
+  label: string;
+  shortcut?: string;
+  disabled?: boolean;
+  run: () => void;
+}
+
+interface TopMenuSection {
+  id: TopMenuId;
+  label: string;
+  actions: TopMenuAction[];
 }
 
 interface QuickOpenState {
@@ -334,7 +351,7 @@ export default function RepoPage() {
 
   const [sidebarState, setSidebarState] = useState<SidebarState>({
     visible: true,
-    width: 280,
+    width: 256,
     activeView: 'explorer',
   });
 
@@ -356,6 +373,8 @@ export default function RepoPage() {
     selectedIndex: 0,
   });
 
+  const [openTopMenu, setOpenTopMenu] = useState<TopMenuId | null>(null);
+
   const [visualizationTrigger, setVisualizationTrigger] = useState<{
     type: 'flowchart' | 'mindmap' | null;
     timestamp?: number;
@@ -366,6 +385,7 @@ export default function RepoPage() {
   const workspaceInitAttemptRef = useRef<string | null>(null);
   const quickOpenInputRef = useRef<HTMLInputElement | null>(null);
   const commandPaletteInputRef = useRef<HTMLInputElement | null>(null);
+  const topMenuContainerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     workspaceSessionIdRef.current = workspaceSessionId;
@@ -1517,6 +1537,170 @@ export default function RepoPage() {
     });
   }, [commandActions, commandPalette.query]);
 
+  const topMenuSections = useMemo<TopMenuSection[]>(() => [
+    {
+      id: 'file',
+      label: 'File',
+      actions: [
+        {
+          id: 'file-save',
+          label: 'Save',
+          shortcut: 'Ctrl+S',
+          run: () => {
+            void saveDocument();
+          },
+        },
+        {
+          id: 'file-save-all',
+          label: 'Save All',
+          shortcut: 'Ctrl+Shift+S',
+          run: () => {
+            void saveAllDocuments();
+          },
+        },
+        {
+          id: 'file-quick-open',
+          label: 'Quick Open',
+          shortcut: 'Ctrl+P',
+          run: () => {
+            setQuickOpen({ open: true, query: '', selectedIndex: 0 });
+            setCommandPalette({ open: false, query: '', selectedIndex: 0 });
+          },
+        },
+      ],
+    },
+    {
+      id: 'edit',
+      label: 'Edit',
+      actions: [
+        {
+          id: 'edit-command-palette',
+          label: 'Command Palette',
+          shortcut: 'Ctrl+Shift+P',
+          run: () => {
+            setCommandPalette({ open: true, query: '', selectedIndex: 0 });
+            setQuickOpen({ open: false, query: '', selectedIndex: 0 });
+          },
+        },
+        {
+          id: 'edit-search',
+          label: 'Search in Files',
+          shortcut: 'Ctrl+Shift+F',
+          run: () => {
+            setSidebarView('search');
+          },
+        },
+      ],
+    },
+    {
+      id: 'view',
+      label: 'View',
+      actions: [
+        {
+          id: 'view-explorer',
+          label: 'Explorer',
+          shortcut: 'Ctrl+Shift+E',
+          run: () => {
+            setSidebarView('explorer');
+          },
+        },
+        {
+          id: 'view-source-control',
+          label: 'Source Control',
+          run: () => {
+            setSidebarView('git');
+          },
+        },
+        {
+          id: 'view-toggle-sidebar',
+          label: 'Toggle Side Bar',
+          shortcut: 'Ctrl+B',
+          run: () => {
+            setSidebarState((previous) => ({ ...previous, visible: !previous.visible }));
+          },
+        },
+        {
+          id: 'view-toggle-panel',
+          label: 'Toggle Panel',
+          shortcut: 'Ctrl+J',
+          run: () => {
+            setPanelState((previous) => ({ ...previous, visible: !previous.visible }));
+          },
+        },
+      ],
+    },
+    {
+      id: 'terminal',
+      label: 'Terminal',
+      actions: [
+        {
+          id: 'terminal-new',
+          label: 'New Terminal',
+          shortcut: 'Ctrl+`',
+          run: () => {
+            void ensureTerminalSession();
+          },
+        },
+        {
+          id: 'terminal-focus',
+          label: 'Focus Terminal Panel',
+          run: () => {
+            setPanelState((previous) => ({ ...previous, visible: true, activeTab: 'terminal' }));
+          },
+        },
+        {
+          id: 'terminal-close-active',
+          label: 'Close Active Terminal',
+          disabled: !activeTerminalId,
+          run: () => {
+            if (!activeTerminalId) return;
+            void closeTerminalSession(activeTerminalId);
+          },
+        },
+      ],
+    },
+    {
+      id: 'help',
+      label: 'Help',
+      actions: [
+        {
+          id: 'help-ai-analysis',
+          label: 'Run AI Analysis',
+          disabled: workspaceKind !== 'repo' || isAnalyzing || allFilePaths.length === 0,
+          run: () => {
+            void analyzeRepository();
+          },
+        },
+        {
+          id: 'help-shortcuts',
+          label: 'Keyboard Shortcuts',
+          run: () => {
+            appendOutput('Shortcuts: Ctrl+P Quick Open, Ctrl+Shift+P Command Palette, Ctrl+` Terminal.');
+          },
+        },
+        {
+          id: 'help-docs',
+          label: 'VS Code Shortcuts Reference',
+          run: () => {
+            window.open('https://code.visualstudio.com/docs/getstarted/keybindings', '_blank', 'noopener,noreferrer');
+          },
+        },
+      ],
+    },
+  ], [
+    activeTerminalId,
+    allFilePaths.length,
+    analyzeRepository,
+    appendOutput,
+    closeTerminalSession,
+    ensureTerminalSession,
+    isAnalyzing,
+    saveAllDocuments,
+    saveDocument,
+    setSidebarView,
+    workspaceKind,
+  ]);
+
   const executeCommand = useCallback(
     async (action: CommandAction | undefined) => {
       if (!action) return;
@@ -1552,6 +1736,31 @@ export default function RepoPage() {
 
     return undefined;
   }, [commandPalette.open]);
+
+  useEffect(() => {
+    if (!openTopMenu) return;
+
+    const onPointerDown = (event: MouseEvent) => {
+      if (!topMenuContainerRef.current) return;
+      if (!topMenuContainerRef.current.contains(event.target as Node)) {
+        setOpenTopMenu(null);
+      }
+    };
+
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpenTopMenu(null);
+      }
+    };
+
+    document.addEventListener('mousedown', onPointerDown);
+    window.addEventListener('keydown', onEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      window.removeEventListener('keydown', onEscape);
+    };
+  }, [openTopMenu]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1737,76 +1946,137 @@ export default function RepoPage() {
   );
 
   const headerContent = (
-    <header className="h-10 border-b border-[var(--cm-border)] bg-[rgba(12,18,28,0.95)] px-3 flex items-center justify-between gap-3">
-      <div className="flex items-center gap-2 text-xs min-w-0">
-        <span className="text-[var(--cm-text-muted)] truncate">{workspacePrimaryLabel}</span>
-        <span className="text-[10px] uppercase tracking-[0.08em] px-1.5 py-0.5 rounded border border-[var(--cm-border)] text-[var(--cm-text-muted)]">
-          {workspaceProviderLabel}
-        </span>
-        <ChevronRight size={12} className="text-[var(--cm-text-muted)] shrink-0" />
-        <span className="text-[var(--cm-text-muted)] truncate">{workspaceSecondaryLabel}</span>
-        {fileBreadcrumb.map((segment, index) => (
-          <span key={`${segment}-${index}`} className="flex items-center gap-2 min-w-0">
-            <ChevronRight size={12} className="text-[var(--cm-text-muted)] shrink-0" />
-            <span
-              className={
-                index === fileBreadcrumb.length - 1
-                  ? 'text-[var(--cm-text)] truncate'
-                  : 'text-[var(--cm-text-muted)] truncate'
-              }
-            >
-              {segment}
-            </span>
-          </span>
-        ))}
-      </div>
+    <header className="border-b border-[#30363d] bg-[#0d1117]/80 backdrop-blur-md relative z-20">
+      <div className="h-9 px-4 border-b border-[#30363d] flex items-center justify-between gap-3">
+        <div ref={topMenuContainerRef} className="flex items-center gap-5">
+          <span className="text-[12px] font-semibold tracking-[0.14em] text-slate-300">CODEMIND.AI</span>
 
-      <div className="flex items-center gap-1.5">
-        <button
-          onClick={() => void analyzeRepository()}
-          disabled={workspaceKind !== 'repo' || isAnalyzing || allFilePaths.length === 0}
-          className="h-7 px-2.5 rounded-md cm-btn-primary text-[10px] font-semibold uppercase tracking-[0.06em] flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {isAnalyzing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-          {isAnalyzing ? 'Analyzing...' : 'Run AI Analysis'}
-        </button>
+          <div className="flex items-center gap-0.5">
+            {topMenuSections.map((section) => (
+              <div key={section.id} className="relative">
+                <button
+                  onClick={() =>
+                    setOpenTopMenu((previous) => (previous === section.id ? null : section.id))
+                  }
+                  className={`h-7 px-2 rounded text-[12px] transition-colors ${
+                    openTopMenu === section.id
+                      ? 'bg-white/10 text-slate-100'
+                      : 'text-slate-400 hover:text-slate-100 hover:bg-white/5'
+                  }`}
+                >
+                  {section.label}
+                </button>
 
-        <button
-          onClick={() => void saveDocument()}
-          className="h-7 px-2.5 rounded-md cm-btn-ghost text-[10px] font-semibold uppercase tracking-[0.06em] flex items-center gap-1"
-          title="Save (Cmd/Ctrl+S)"
-        >
-          <Save size={12} />
-          Save
-        </button>
-
-        <button
-          onClick={() => setQuickOpen({ open: true, query: '', selectedIndex: 0 })}
-          className="h-7 w-7 rounded-md cm-btn-ghost flex items-center justify-center"
-          title="Quick Open (Cmd/Ctrl+P)"
-        >
-          <Search size={14} />
-        </button>
+                {openTopMenu === section.id && (
+                  <div className="absolute left-0 top-8 min-w-[230px] rounded-md border border-[#30363d] bg-[#0b111a] shadow-xl shadow-black/40 py-1 z-30">
+                    {section.actions.map((action) => (
+                      <button
+                        key={action.id}
+                        disabled={action.disabled}
+                        onClick={() => {
+                          setOpenTopMenu(null);
+                          action.run();
+                        }}
+                        className="w-full px-3 h-8 flex items-center justify-between text-left text-[12px] text-slate-300 hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <span>{action.label}</span>
+                        {action.shortcut && (
+                          <span className="text-[10px] text-slate-500">{action.shortcut}</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
 
         <button
           onClick={() => setCommandPalette({ open: true, query: '', selectedIndex: 0 })}
-          className="h-7 w-7 rounded-md cm-btn-ghost flex items-center justify-center"
-          title="Command Palette (Cmd/Ctrl+Shift+P)"
+          className="h-7 min-w-[320px] max-w-[420px] px-3 rounded border border-[#30363d] bg-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/10 flex items-center gap-2 text-[12px]"
+          title="Command Palette (Ctrl+Shift+P)"
         >
-          <Command size={14} />
+          <Search size={14} />
+          <span className="truncate">Search files, settings, or commands</span>
+          <span className="ml-auto text-[10px] text-slate-500">Ctrl+K</span>
         </button>
+      </div>
 
-        <button
-          onClick={() => void ensureTerminalSession()}
-          className="h-7 w-7 rounded-md cm-btn-ghost flex items-center justify-center"
-          title="New Terminal"
-        >
-          <TerminalSquare size={14} />
-        </button>
+      <div className="h-12 px-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-xs min-w-0 text-slate-500">
+          <span className="truncate hover:text-slate-300 cursor-pointer transition-colors">{workspacePrimaryLabel}</span>
+          <span className="text-slate-700">/</span>
+          <span className="truncate hover:text-slate-300 cursor-pointer transition-colors">{workspaceSecondaryLabel}</span>
+          <span className="text-[10px] uppercase tracking-[0.08em] px-1.5 py-0.5 rounded border border-[#30363d] text-slate-500">
+            {workspaceProviderLabel}
+          </span>
+          {fileBreadcrumb.map((segment, index) => (
+            <span key={`${segment}-${index}`} className="flex items-center gap-2 min-w-0">
+              <ChevronRight size={10} className="text-slate-600 shrink-0" />
+              <span
+                className={
+                  index === fileBreadcrumb.length - 1
+                    ? 'text-slate-200 truncate'
+                    : 'text-slate-500 truncate'
+                }
+              >
+                {segment}
+              </span>
+            </span>
+          ))}
+        </div>
 
-        <button className="h-7 w-7 rounded-md cm-btn-ghost flex items-center justify-center" title="Settings">
-          <Settings2 size={14} />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => void analyzeRepository()}
+            disabled={workspaceKind !== 'repo' || isAnalyzing || allFilePaths.length === 0}
+            className="h-8 px-3 rounded border border-[#3b82f6]/20 bg-[#3b82f6]/10 text-[#58a6ff] text-xs font-semibold flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#3b82f6]/20 transition-all"
+          >
+            {isAnalyzing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+            {isAnalyzing ? 'Analyzing...' : 'Run AI Analysis'}
+          </button>
+
+          <button
+            onClick={() => void saveDocument()}
+            className="p-1.5 hover:bg-white/5 rounded text-slate-400"
+            title="Save (Cmd/Ctrl+S)"
+          >
+            <Save size={18} />
+          </button>
+
+          <button
+            onClick={() => setQuickOpen({ open: true, query: '', selectedIndex: 0 })}
+            className="p-1.5 hover:bg-white/5 rounded text-slate-400"
+            title="Quick Open (Cmd/Ctrl+P)"
+          >
+            <Search size={18} />
+          </button>
+
+          <button
+            onClick={() => setSidebarState((previous) => ({ ...previous, visible: !previous.visible }))}
+            className="p-1.5 hover:bg-white/5 rounded text-slate-400"
+            title="Toggle Sidebar (Cmd/Ctrl+B)"
+          >
+            <PanelLeft size={18} />
+          </button>
+
+          <button
+            onClick={() => void ensureTerminalSession()}
+            className="p-1.5 hover:bg-white/5 rounded text-slate-400"
+            title="New Terminal"
+          >
+            <TerminalSquare size={18} />
+          </button>
+
+          <button
+            onClick={() => setCommandPalette({ open: true, query: '', selectedIndex: 0 })}
+            className="p-1.5 hover:bg-white/5 rounded text-slate-400"
+            title="Command Palette (Cmd/Ctrl+Shift+P)"
+          >
+            <Settings2 size={18} />
+          </button>
+        </div>
       </div>
     </header>
   );
@@ -1927,7 +2197,7 @@ export default function RepoPage() {
         } : undefined}
       >
         <div className="h-full flex flex-row overflow-hidden">
-          <div className="flex-1 flex flex-col border-r border-[var(--cm-border)] min-w-0">
+          <div className="flex-1 flex flex-col border-r border-[#30363d] min-w-0">
             {error && (
               <div className="mx-4 mt-3 p-3 bg-red-500/15 border border-red-400/45 rounded-lg text-red-200 text-sm flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -1950,20 +2220,34 @@ export default function RepoPage() {
                 readOnly={false}
               />
             ) : (
-              <div className="flex-1 flex items-center justify-center h-full text-center flex-col opacity-70 cm-editor">
+              <div className="flex-1 flex items-center justify-center p-8 bg-[#0d1117]">
                 {isFileLoading ? (
-                  <Loader2 className="w-12 h-12 text-[var(--cm-primary)] animate-spin mb-4" />
+                  <div className="text-center">
+                    <Loader2 className="w-12 h-12 text-[#58a6ff] animate-spin mx-auto mb-4" />
+                    <p className="text-slate-500 text-sm">Loading file...</p>
+                  </div>
                 ) : (
-                  <Code className="w-16 h-16 text-[var(--cm-text-muted)] mb-4" />
+                  <div className="flex flex-col items-center max-w-md w-full text-center">
+                    <div className="mb-8 relative">
+                      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#3b82f6] to-blue-600 flex items-center justify-center shadow-2xl shadow-[#3b82f6]/20">
+                        <Code className="w-9 h-9 text-white" />
+                      </div>
+                      <div className="absolute -bottom-2 -right-2 w-6 h-6 bg-emerald-500 rounded-full border-4 border-[#0d1117] flex items-center justify-center">
+                        <span className="w-1.5 h-1.5 bg-white rounded-full" />
+                      </div>
+                    </div>
+                    <h1 className="text-3xl font-semibold text-white mb-2 tracking-tight">CodeMind</h1>
+                    <p className="text-slate-500 text-sm mb-10">
+                      Select a file to start editing or use AI to generate new components.
+                    </p>
+
+                  </div>
                 )}
-                <p className="text-[var(--cm-text-muted)] text-sm">
-                  {isFileLoading ? 'Loading file...' : 'No file selected'}
-                </p>
               </div>
             )}
           </div>
 
-          <aside className="hidden xl:flex w-[400px] flex-shrink-0 cm-shell flex-col border-l border-[var(--cm-border)]">
+          <aside className="hidden xl:flex w-[400px] flex-shrink-0 bg-[#010409] flex-col border-l border-[#30363d]">
             <MindMapView
               selectedFileContent={activeDocument?.content || null}
               triggerGeneration={visualizationTrigger}

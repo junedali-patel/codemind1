@@ -1,7 +1,7 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Download, Loader2, Play, Power, PowerOff, RefreshCw, Search, Trash2 } from 'lucide-react';
+import { AlertCircle, Download, Loader2, Play, Power, PowerOff, RefreshCw, Search, Trash2 } from '@/lib/icons';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:4000';
 

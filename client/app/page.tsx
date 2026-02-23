@@ -3,18 +3,20 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  ArrowLeft,
   Brain,
   ChevronRight,
+  Download,
+  FileCode2,
+  Folder,
   FolderOpen,
   Github,
   Loader2,
+  Pin,
+  Puzzle,
   Search,
-  Star,
-  GitFork,
-  Eye,
+  Settings,
   X,
-} from 'lucide-react';
+} from '@/lib/icons';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:4000';
 const RECENT_LOCAL_KEY = 'codemind.recentLocalPaths';
@@ -104,10 +106,17 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
     headers.set('Content-Type', 'application/json');
   }
 
-  const response = await fetch(url, {
-    ...init,
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...init,
+      headers,
+    });
+  } catch {
+    throw new Error(
+      `Cannot reach backend at ${API_BASE_URL}. Start it with: cd /Users/junedalipatel/code/codemind1/server && npm run dev`
+    );
+  }
 
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`;
@@ -145,6 +154,13 @@ function saveRecentLocalPath(nextPath: string) {
   const current = loadRecentLocalPaths();
   const next = [normalizedPath, ...current.filter((item) => item !== normalizedPath)].slice(0, 8);
   localStorage.setItem(RECENT_LOCAL_KEY, JSON.stringify(next));
+}
+
+function workspaceNameFromPath(absolutePath: string): string {
+  const normalized = String(absolutePath || '').trim().replace(/\/+$/, '');
+  if (!normalized) return 'workspace';
+  const segments = normalized.split('/').filter(Boolean);
+  return segments[segments.length - 1] || normalized;
 }
 
 export default function HomePage() {
@@ -247,6 +263,26 @@ export default function HomePage() {
     }
   }, [fetchUserRepos]);
 
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    let cancelled = false;
+    void requestJson<{ roots: LocalRoot[] }>(`${API_BASE_URL}/api/workspace/local-roots`)
+      .then((payload) => {
+        if (cancelled) return;
+        const roots = payload.roots || [];
+        setLocalRoots(roots);
+        if (roots.length > 0) {
+          setSelectedRootId((previous) => previous || roots[0].id);
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated]);
+
   const handleGitHubLogin = async () => {
     setIsSigningIn(true);
     setError('');
@@ -287,7 +323,11 @@ export default function HomePage() {
       });
       router.push(`/workspace/${encodeURIComponent(payload.sessionId)}`);
     } catch (openError) {
-      setError(getErrorMessage(openError, `Failed to open ${owner}/${repo}`));
+      const details = getErrorMessage(openError, `Failed to open ${owner}/${repo}`);
+      setError(details);
+      if (details.includes('Cannot reach backend')) {
+        setView('launcher');
+      }
     }
   };
 
@@ -461,214 +501,237 @@ export default function HomePage() {
   }
 
   return (
-    <div className="h-screen cm-shell flex overflow-hidden">
-      <aside className="w-12 cm-sidebar border-r border-[var(--cm-border)] flex flex-col items-center py-2">
-        <div className="mb-6">
-          <Brain className="w-7 h-7 text-[var(--cm-primary)]" />
-        </div>
-        <nav className="flex-1 flex flex-col gap-1.5">
-          <button
-            onClick={() => setView('launcher')}
-            className={`h-9 w-9 rounded-md flex items-center justify-center ${
-              view === 'launcher'
-                ? 'text-[var(--cm-text)] bg-[rgba(79,142,247,0.16)]'
-                : 'text-[var(--cm-text-muted)] hover:text-[var(--cm-text)] hover:bg-[rgba(129,150,189,0.12)]'
-            }`}
-            title="Workspace Launcher"
-          >
-            <FolderOpen className="w-5 h-5" />
-          </button>
-          <button
-            onClick={() => setView('repos')}
-            className={`h-9 w-9 rounded-md flex items-center justify-center ${
-              view === 'repos'
-                ? 'text-[var(--cm-text)] bg-[rgba(79,142,247,0.16)]'
-                : 'text-[var(--cm-text-muted)] hover:text-[var(--cm-text)] hover:bg-[rgba(129,150,189,0.12)]'
-            }`}
-            title="Explore Repositories"
-          >
-            <Github className="w-5 h-5" />
-          </button>
-        </nav>
-      </aside>
-
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <nav className="h-11 border-b border-[var(--cm-border)] bg-[rgba(12,18,28,0.94)] px-4 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-4 min-w-0">
-            <div className="p-1.5 rounded-md bg-[linear-gradient(145deg,#2f81f7,#5167ff)] shrink-0">
-              <Brain className="w-4 h-4 text-white" />
-            </div>
-            <span className="text-sm font-semibold text-slate-100 truncate tracking-[0.02em]">CodeMind.AI</span>
+    <>
+      <div className="h-screen bg-[#0a0c10] text-slate-300 flex overflow-hidden">
+        <aside className="w-12 flex flex-col items-center py-4 border-r border-[#30363d] bg-[#161b22] z-20">
+          <div className="mb-8 text-[#3b82f6]">
+            <Brain className="w-6 h-6" />
           </div>
-
-          <div className="flex items-center gap-3">
-            {view === 'repos' && (
-              <div className="hidden md:flex items-center gap-2 h-8 w-[320px] px-3 rounded-md border border-[var(--cm-border-soft)] bg-[rgba(9,13,21,0.78)]">
-                <Search className="w-4 h-4 text-[var(--cm-text-muted)]" />
-                <input
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="Search repositories..."
-                  className="w-full bg-transparent text-sm text-slate-100 placeholder:text-[var(--cm-text-muted)] focus:outline-none"
-                />
-              </div>
-            )}
+          <nav className="flex flex-col gap-6 items-center flex-1">
             <button
-              onClick={handleLogout}
-              className="h-8 px-3 rounded-md text-[11px] font-semibold border border-red-400/35 text-red-300 hover:bg-red-500/10"
+              onClick={() => setView('launcher')}
+              className={`relative px-3 text-slate-500 transition-colors ${
+                view === 'launcher' ? 'text-white' : 'hover:text-white'
+              }`}
             >
-              Sign Out
+              {view === 'launcher' && (
+                <span className="absolute -left-3 top-1/2 -translate-y-1/2 h-5 w-[2px] rounded-r bg-[#3b82f6]" />
+              )}
+              <FolderOpen className="w-5 h-5" />
             </button>
+            <button
+              onClick={() => setView('repos')}
+              className={`relative px-3 text-slate-500 transition-colors ${
+                view === 'repos' ? 'text-white' : 'hover:text-white'
+              }`}
+            >
+              {view === 'repos' && (
+                <span className="absolute -left-3 top-1/2 -translate-y-1/2 h-5 w-[2px] rounded-r bg-[#3b82f6]" />
+              )}
+              <Search className="w-5 h-5" />
+            </button>
+            <button onClick={() => setView('repos')} className="px-3 text-slate-500 hover:text-white transition-colors">
+              <FileCode2 className="w-5 h-5" />
+            </button>
+            <button onClick={() => void handleOpenFolder()} className="px-3 text-slate-500 hover:text-white transition-colors">
+              <Download className="w-5 h-5" />
+            </button>
+            <button className="px-3 text-slate-500 hover:text-white transition-colors">
+              <Puzzle className="w-5 h-5" />
+            </button>
+          </nav>
+          <div className="mt-auto flex flex-col gap-6 items-center">
+            <button className="px-3 text-slate-500 hover:text-white transition-colors">
+              <Settings className="w-5 h-5" />
+            </button>
+            <div className="w-7 h-7 rounded-full bg-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-300">
+              JD
+            </div>
           </div>
-        </nav>
+        </aside>
 
-        <div className="flex-1 overflow-y-auto">
-          <div className="max-w-[1400px] mx-auto px-6 md:px-10 py-8">
+        <main className="flex-1 flex flex-col relative overflow-y-auto">
+          <header className="h-12 border-b border-[#30363d] flex items-center justify-between px-6 bg-[#0a0c10]/70 backdrop-blur-md sticky top-0 z-10">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-slate-400 uppercase tracking-[0.18em]">CodeMind.ai</span>
+              <span className="text-slate-700">/</span>
+              <span className="text-xs font-medium text-slate-500">
+                {view === 'launcher' ? 'Launcher' : 'Repositories'}
+              </span>
+            </div>
+            <div className="flex items-center gap-4">
+              <button className="text-xs text-slate-500 hover:text-[#3b82f6] transition-colors">Documentation</button>
+              <button
+                onClick={handleLogout}
+                className="px-3 py-1 bg-[#3b82f6] text-white text-xs font-medium rounded hover:bg-blue-600 transition-colors"
+              >
+                Sign Out
+              </button>
+            </div>
+          </header>
+
+          <div className="max-w-4xl mx-auto w-full px-8 py-16 flex flex-col gap-12">
             {error && (
-              <div className="mb-6 p-4 bg-red-500/10 border border-red-400/45 rounded-lg text-red-200 text-sm">
+              <div className="p-3 rounded-lg border border-red-500/40 bg-red-500/10 text-red-200 text-sm">
                 {error}
               </div>
             )}
 
             {view === 'launcher' ? (
               <>
-                <div className="flex items-end gap-3 mb-6">
-                  <h2 className="text-3xl font-bold text-slate-100">Open Workspace</h2>
-                  <span className="mb-1 px-2.5 py-1 rounded-full text-xs bg-[rgba(148,163,184,0.15)] text-[var(--cm-text-muted)]">
-                    VS Code-style
-                  </span>
-                </div>
+                <section className="space-y-2">
+                  <h1 className="text-4xl font-light tracking-tight text-white flex items-center gap-2.5">
+                    Code<span className="font-semibold text-[#3b82f6]">Mind</span>.ai
+                  </h1>
+                  <p className="text-slate-400 text-lg">Your intelligent workspace for modern development.</p>
+                </section>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-6">
+                <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <button
                     onClick={() => void handleOpenFolder()}
                     disabled={isPickingLocalFolder}
-                    className="cm-card rounded-xl p-5 text-left hover:border-[var(--cm-primary)]/60 transition-all disabled:opacity-80 disabled:cursor-wait"
+                    className="flex flex-col p-6 text-left border border-[#30363d] bg-[#161b22] rounded-xl transition-all hover:border-[#3b82f6] hover:bg-[rgba(59,130,246,0.04)] group disabled:opacity-80"
                   >
-                    <div className="flex items-center gap-3 mb-3">
-                      {isPickingLocalFolder ? (
-                        <Loader2 className="w-5 h-5 text-[var(--cm-primary)] animate-spin" />
-                      ) : (
-                        <FolderOpen className="w-5 h-5 text-[var(--cm-primary)]" />
-                      )}
-                      <h3 className="text-base font-semibold text-slate-100">
-                        {isPickingLocalFolder ? 'Opening Finder / Explorer...' : 'Open Folder'}
-                      </h3>
+                    <div className="w-12 h-12 rounded-lg bg-blue-900/30 text-[#3b82f6] flex items-center justify-center mb-4 transition-transform group-hover:scale-110">
+                      {isPickingLocalFolder ? <Loader2 className="w-6 h-6 animate-spin" /> : <FolderOpen className="w-6 h-6" />}
                     </div>
-                    <p className="text-sm text-[var(--cm-text-muted)]">
-                      Open Finder/File Explorer directly. If unavailable, fallback to in-app folder browser.
+                    <h3 className="text-lg font-medium text-white mb-2">Open Local Folder</h3>
+                    <p className="text-sm text-slate-400 leading-relaxed">
+                      Browse approved local roots or enter an absolute path to open your existing local projects.
                     </p>
                   </button>
 
                   <button
                     onClick={() => setView('repos')}
-                    className="cm-card rounded-xl p-5 text-left hover:border-[var(--cm-primary)]/60 transition-all"
+                    className="flex flex-col p-6 text-left border border-[#30363d] bg-[#161b22] rounded-xl transition-all hover:border-[#3b82f6] hover:bg-[rgba(59,130,246,0.04)] group"
                   >
-                    <div className="flex items-center gap-3 mb-3">
-                      <Github className="w-5 h-5 text-[var(--cm-primary)]" />
-                      <h3 className="text-base font-semibold text-slate-100">Explore Repositories</h3>
+                    <div className="w-12 h-12 rounded-lg bg-indigo-900/30 text-indigo-400 flex items-center justify-center mb-4 transition-transform group-hover:scale-110">
+                      <Github className="w-6 h-6" />
                     </div>
-                    <p className="text-sm text-[var(--cm-text-muted)]">
-                      Open GitHub repositories in a workspace session with full editor and terminal workflows.
+                    <h3 className="text-lg font-medium text-white mb-2">Explore Repositories</h3>
+                    <p className="text-sm text-slate-400 leading-relaxed">
+                      Open GitHub repositories in a cloud workspace session with full editor and terminal workflows.
                     </p>
                   </button>
-                </div>
+                </section>
 
-                <div className="cm-card rounded-xl p-5">
-                  <h3 className="text-sm font-semibold text-slate-100 mb-3">Recent Local Folders</h3>
-                  {recentLocalPaths.length === 0 ? (
-                    <p className="text-sm text-[var(--cm-text-muted)]">No recent local folders yet.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {recentLocalPaths.map((absolutePath) => (
+                <section className="space-y-4">
+                  <div className="flex items-center justify-between border-b border-[#30363d] pb-3">
+                    <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500">Recent Local Folders</h2>
+                    <button
+                      onClick={() => {
+                        localStorage.removeItem(RECENT_LOCAL_KEY);
+                        setRecentLocalPaths([]);
+                      }}
+                      className="text-xs text-[#3b82f6] hover:underline"
+                    >
+                      Clear all
+                    </button>
+                  </div>
+
+                  <div className="space-y-1">
+                    {recentLocalPaths.length > 0 ? (
+                      recentLocalPaths.map((absolutePath, index) => (
                         <button
                           key={absolutePath}
                           onClick={() => void openLocalWorkspaceByAbsolutePath(absolutePath)}
-                          className="w-full h-10 px-3 rounded-lg border border-[var(--cm-border)] text-left text-sm text-slate-100 hover:border-[var(--cm-primary)]/60 bg-[rgba(2,6,23,0.45)] truncate"
+                          className="group w-full flex items-center justify-between p-3 rounded-lg hover:bg-slate-800/50 transition-colors text-left"
                         >
-                          {absolutePath}
+                          <div className="flex items-center gap-4 min-w-0">
+                            <Folder className="w-5 h-5 text-slate-400 group-hover:text-[#3b82f6]" />
+                            <div className="flex flex-col min-w-0">
+                              <span className="text-sm font-medium text-slate-300 truncate">{workspaceNameFromPath(absolutePath)}</span>
+                              <span className="text-xs font-mono text-slate-500 truncate">{absolutePath}</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 shrink-0">
+                            <span className="hidden group-hover:block text-[10px] text-slate-500">
+                              {index === 0 ? '2 hours ago' : index === 1 ? 'Yesterday' : '3 days ago'}
+                            </span>
+                            <span className="p-1.5 text-slate-600 group-hover:text-[#3b82f6]">
+                              <Pin className="w-3.5 h-3.5" />
+                            </span>
+                          </div>
                         </button>
-                      ))}
+                      ))
+                    ) : (
+                      <div className="p-3 text-sm text-slate-500">No recent local folders yet.</div>
+                    )}
+                  </div>
+                </section>
+
+                <footer className="mt-auto border-t border-[#30363d] pt-8 pb-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-8">
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-500 uppercase mb-3">Shortcuts</h4>
+                      <ul className="text-xs space-y-2 text-slate-400">
+                        <li className="flex justify-between">
+                          <span>Open Project</span>
+                          <kbd className="px-1 bg-slate-800 rounded border border-slate-700">⌘ O</kbd>
+                        </li>
+                        <li className="flex justify-between">
+                          <span>Command Palette</span>
+                          <kbd className="px-1 bg-slate-800 rounded border border-slate-700">⌘ ⇧ P</kbd>
+                        </li>
+                      </ul>
                     </div>
-                  )}
-                </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-500 uppercase mb-3">AI Support</h4>
+                      <ul className="text-xs space-y-2 text-slate-400">
+                        <li className="hover:text-[#3b82f6] transition-colors">Ask CodeMind Assistant</li>
+                        <li className="hover:text-[#3b82f6] transition-colors">Setup Custom Models</li>
+                      </ul>
+                    </div>
+                    <div className="flex flex-col items-end justify-center">
+                      <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                        Connected to Local Engine
+                      </div>
+                    </div>
+                  </div>
+                </footer>
               </>
             ) : (
-              <>
-                <div className="flex items-center justify-between gap-3 mb-6">
-                  <div className="flex items-end gap-3">
-                    <h2 className="text-3xl font-bold text-slate-100">Your repositories</h2>
-                    <span className="mb-1 px-2.5 py-1 rounded-full text-xs bg-[rgba(148,163,184,0.15)] text-[var(--cm-text-muted)]">
-                      {repos.length}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => setView('launcher')}
-                    className="h-9 px-4 rounded-full cm-btn-ghost text-xs font-semibold flex items-center gap-1.5"
-                  >
-                    <ArrowLeft size={14} />
-                    Back to Launcher
-                  </button>
+              <section className="space-y-5">
+                <h1 className="text-4xl font-light tracking-tight text-white">Repositories</h1>
+                <div className="h-10 rounded-lg border border-[#30363d] bg-[#161b22] flex items-center gap-2 px-3">
+                  <Search className="w-4 h-4 text-slate-500" />
+                  <input
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    placeholder="Search repositories..."
+                    className="w-full bg-transparent text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none"
+                  />
                 </div>
-
                 {isLoadingRepos ? (
-                  <div className="flex items-center justify-center h-64">
-                    <div className="text-center">
-                      <Loader2 className="w-10 h-10 text-[var(--cm-primary)] animate-spin mx-auto mb-4" />
-                      <p className="text-[var(--cm-text-muted)] text-sm">Loading your repositories...</p>
-                    </div>
+                  <div className="h-48 flex items-center justify-center">
+                    <Loader2 className="w-8 h-8 animate-spin text-[#3b82f6]" />
                   </div>
                 ) : filteredRepos.length > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                  <div className="space-y-2">
                     {filteredRepos.map((repo) => (
                       <button
                         key={repo.id}
                         onClick={() => void handleOpenRepoWorkspace(repo.owner.login, repo.name)}
-                        className="cm-card rounded-xl p-4 text-left flex flex-col h-full hover:border-[var(--cm-primary)]/60 transition-all"
+                        className="w-full text-left p-4 rounded-lg border border-[#30363d] bg-[#161b22] hover:border-[#3b82f6] transition-colors"
                       >
-                        <div className="flex items-start justify-between mb-3 w-full gap-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <Github className="w-5 h-5 text-[var(--cm-text-muted)]" />
-                            <h3 className="text-sm font-semibold text-slate-100 truncate">{repo.name}</h3>
-                          </div>
-                          {repo.language && (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium border border-sky-400/30 text-sky-300 bg-sky-500/10 shrink-0">
-                              {repo.language}
-                            </span>
-                          )}
-                        </div>
-
-                        {repo.description && (
-                          <p className="text-xs text-[var(--cm-text-muted)] line-clamp-2 mb-4 flex-1">{repo.description}</p>
-                        )}
-
-                        <div className="flex items-center gap-4 text-xs text-[var(--cm-text-muted)] mt-auto pt-2 border-t border-[var(--cm-border)]">
-                          <div className="flex items-center gap-1">
-                            <Star className="w-3.5 h-3.5" />
-                            {repo.stargazers_count}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <GitFork className="w-3.5 h-3.5" />
-                            {repo.forks_count}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Eye className="w-3.5 h-3.5" />
-                            {repo.watchers_count}
-                          </div>
-                        </div>
+                        <div className="text-base font-medium text-white">{repo.full_name}</div>
+                        <div className="text-xs text-slate-500 mt-1">{repo.description || 'No description'}</div>
                       </button>
                     ))}
                   </div>
                 ) : (
-                  <div className="text-center py-20 rounded-xl border border-dashed border-[var(--cm-border-soft)] bg-[rgba(15,23,42,0.5)]">
-                    <p className="text-[var(--cm-text-muted)] mb-3 text-sm">
-                      {searchQuery ? 'No repositories match your search' : 'No repositories found'}
-                    </p>
-                  </div>
+                  <div className="text-sm text-slate-500">No repositories found.</div>
                 )}
-              </>
+              </section>
             )}
           </div>
+        </main>
+
+        <div className="fixed bottom-4 left-4 z-50">
+          <button className="w-8 h-8 rounded-full bg-white text-slate-900 flex items-center justify-center font-bold text-xs shadow-lg">
+            N
+          </button>
         </div>
       </div>
 
@@ -814,6 +877,6 @@ export default function HomePage() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

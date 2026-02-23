@@ -1,6 +1,6 @@
 'use client';
 
-import { Palette, Volume2, Bell, Eye } from 'lucide-react';
+import { Palette, Volume2, Bell, Eye } from '@/lib/icons';
 import { useState } from 'react';
 
 function Toggle({ active, onToggle }: { active: boolean; onToggle: () => void }) {

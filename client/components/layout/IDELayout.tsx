@@ -120,7 +120,7 @@ const PANEL_MIN_HEIGHT = 140;
 
 const DEFAULT_SIDEBAR_STATE: SidebarState = {
   visible: true,
-  width: 280,
+  width: 256,
   activeView: 'explorer',
 };
 
@@ -282,7 +282,7 @@ export default function IDELayout({
       case 'search':
         if (!searchViewProps) {
           return (
-            <div className="p-4 text-sm text-[var(--cm-text-muted)] text-center">
+            <div className="p-4 text-sm text-slate-500 text-center">
               Search is unavailable for this workspace.
             </div>
           );
@@ -291,7 +291,7 @@ export default function IDELayout({
       case 'git':
         if (!gitViewProps) {
           return (
-            <div className="p-4 text-sm text-[var(--cm-text-muted)] text-center">
+            <div className="p-4 text-sm text-slate-500 text-center">
               Source control is unavailable for this workspace.
             </div>
           );
@@ -299,8 +299,8 @@ export default function IDELayout({
         return <GitView {...gitViewProps} />;
       case 'run':
         return (
-          <div className="p-4 text-sm text-[var(--cm-text-muted)]">
-            <p className="mb-2 text-[var(--cm-text)] font-medium">Run and Debug</p>
+          <div className="p-4 text-sm text-slate-500">
+            <p className="mb-2 text-slate-200 font-medium">Run and Debug</p>
             <p className="leading-6">
               Use the terminal panel for runtime commands and the Debug Console tab for logs. Debug adapter
               integrations can be added in the next phase.
@@ -340,7 +340,7 @@ export default function IDELayout({
   }, [sidebarState.activeView]);
 
   return (
-    <div className="h-screen flex flex-col cm-shell overflow-hidden">
+    <div className="h-screen flex flex-col overflow-hidden bg-[#0d1117] text-[#c9d1d9]">
       <div className="flex-1 flex overflow-hidden min-h-0">
         <ActivityBar activeView={showAI ? 'ai' : sidebarState.activeView} onViewChange={handleActivityChange} />
 
@@ -356,7 +356,7 @@ export default function IDELayout({
             <div
               role="separator"
               aria-label="Resize sidebar"
-              className="w-[3px] bg-transparent hover:bg-[rgba(79,142,247,0.35)] cursor-col-resize transition-colors"
+              className="w-[3px] bg-transparent hover:bg-white/20 cursor-col-resize transition-colors"
               onMouseDown={(event) => {
                 resizeRef.current = {
                   type: 'sidebar',
@@ -385,16 +385,16 @@ export default function IDELayout({
 
           {shouldShowAnalysisPanel && (
             <section
-              className="border-t border-[var(--cm-border)] cm-panel flex flex-col"
+              className="border-t border-[#30363d] bg-[#010409] flex flex-col"
               style={{ minHeight: 130, maxHeight: '45vh' }}
             >
-              <div className="h-8 px-3 border-b border-[var(--cm-border)] flex items-center justify-between bg-[rgba(12,18,28,0.92)]">
-                <span className="text-[10px] font-semibold uppercase tracking-[0.09em] text-[var(--cm-text)]">
+              <div className="h-8 px-3 border-b border-[#30363d] flex items-center justify-between bg-[#010409]">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.09em] text-slate-300">
                   AI Analysis
                 </span>
                 <button
                   onClick={analysisPanel?.onClose}
-                  className="h-6 w-6 rounded flex items-center justify-center text-[var(--cm-text-muted)] hover:text-[var(--cm-text)] hover:bg-[rgba(129,150,189,0.12)]"
+                  className="h-6 w-6 rounded flex items-center justify-center text-slate-500 hover:text-slate-200 hover:bg-white/5"
                 >
                   ✕
                 </button>
@@ -405,7 +405,7 @@ export default function IDELayout({
                     {analysisPanel.content}
                   </pre>
                 ) : (
-                  <span className="text-[var(--cm-text-muted)] text-xs">
+                  <span className="text-slate-500 text-xs">
                     {analysisPanel?.isAnalyzing ? 'Analyzing...' : 'No analysis yet.'}
                   </span>
                 )}
@@ -418,7 +418,7 @@ export default function IDELayout({
               <div
                 role="separator"
                 aria-label="Resize panel"
-                className="h-[3px] bg-transparent hover:bg-[rgba(79,142,247,0.35)] cursor-row-resize transition-colors"
+                className="h-[3px] bg-transparent hover:bg-white/20 cursor-row-resize transition-colors"
                 onMouseDown={(event) => {
                   resizeRef.current = {
                     type: 'panel',
@@ -454,14 +454,14 @@ export default function IDELayout({
         </div>
 
         {showAI && (
-          <aside className="w-[360px] lg:w-[400px] h-full border-l border-[var(--cm-border)] cm-sidebar flex-shrink-0 overflow-hidden transition-all duration-300">
-            <div className="h-9 px-3 border-b border-[var(--cm-border)] bg-[rgba(13,18,27,0.95)] flex items-center justify-between">
-              <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--cm-text)]">
+          <aside className="w-[360px] lg:w-[400px] h-full border-l border-[#30363d] bg-[#010409] flex-shrink-0 overflow-hidden transition-all duration-300">
+            <div className="h-9 px-3 border-b border-[#30363d] bg-[#010409] flex items-center justify-between">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-300">
                 AI Assistant
               </span>
               <button
                 onClick={() => setShowAI(false)}
-                className="h-6 w-6 rounded flex items-center justify-center text-[var(--cm-text-muted)] hover:text-[var(--cm-text)] hover:bg-[rgba(129,150,189,0.12)]"
+                className="h-6 w-6 rounded flex items-center justify-center text-slate-500 hover:text-slate-200 hover:bg-white/5"
               >
                 ✕
               </button>

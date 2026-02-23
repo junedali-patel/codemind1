@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle, CircleAlert, GitBranch, Zap } from 'lucide-react';
+import { AlertTriangle, CircleAlert, GitBranch, Zap } from '@/lib/icons';
 
 interface StatusBarProps {
   line?: number;
@@ -46,40 +46,45 @@ export default function StatusBar({
     : 'Ext Host Off';
 
   return (
-    <footer className="h-[22px] px-2.5 flex items-center justify-between text-[10px] cm-mono border-t border-[var(--cm-border)] bg-[rgba(11,16,25,0.98)] text-[var(--cm-text-muted)]">
-      <div className="flex items-center gap-3">
-        <div className="text-[var(--cm-text)] uppercase tracking-[0.08em]">
+    <footer className="h-6 px-3 bg-[#3b82f6] text-white flex items-center justify-between text-[11px] font-medium">
+      <div className="flex items-center gap-4">
+        <div className="hover:bg-white/10 px-2 h-full cursor-pointer flex items-center transition-colors uppercase">
           {workspaceKind}
         </div>
-        <div className="flex items-center gap-1 text-[var(--cm-text)]">
+        <div className="flex items-center gap-1.5 hover:bg-white/10 px-2 h-full cursor-pointer transition-colors">
           <GitBranch size={11} />
-          <span>{branch || 'no-branch'}</span>
+          <span>{branch || 'main'}*</span>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 hover:bg-white/10 px-2 h-full cursor-pointer transition-colors">
           <span className={`h-1.5 w-1.5 rounded-full ${config.dot}`} />
           <span>{config.label}</span>
         </div>
-        <div>
+        <div className="flex items-center gap-1 hover:bg-white/10 px-2 h-full cursor-pointer transition-colors">
+          <CircleAlert size={11} />
+          <span>0</span>
+          <AlertTriangle size={11} />
+          <span>0</span>
+        </div>
+        <div className="hover:bg-white/10 px-2 h-full cursor-pointer flex items-center transition-colors">
           Terminals: {terminalCount}
         </div>
-        <div>
+        <div className="hover:bg-white/10 px-2 h-full cursor-pointer flex items-center transition-colors">
           {extensionStatusLabel}
-        </div>
-        <div className="flex items-center gap-1">
-          <CircleAlert size={10} />
-          <span>0</span>
-          <AlertTriangle size={10} />
-          <span>0</span>
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
-        <span>
+      <div className="flex items-center gap-4">
+        <div className="hover:bg-white/10 px-2 h-full cursor-pointer flex items-center transition-colors">
           Ln {line}, Col {column}
-        </span>
-        <span className="uppercase text-[var(--cm-text)]">{language}</span>
-        <div className="flex items-center gap-1">
-          <Zap size={10} />
+        </div>
+        <div className="hover:bg-white/10 px-2 h-full cursor-pointer flex items-center transition-colors">
+          UTF-8
+        </div>
+        <div className="hover:bg-white/10 px-2 h-full cursor-pointer flex items-center transition-colors uppercase">
+          {language}
+        </div>
+        <div className="flex items-center gap-1 hover:bg-white/10 px-2 h-full cursor-pointer transition-colors">
+          <Zap size={11} />
           <span>1.5s</span>
         </div>
       </div>

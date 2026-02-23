@@ -6,7 +6,7 @@ import axios from 'axios';
 import type { EditorProps } from '@monaco-editor/react';
 import type { editor as MonacoEditor } from 'monaco-editor';
 import type * as Monaco from 'monaco-editor';
-import { AlertCircle, Check, Loader2, Sparkles, X } from 'lucide-react';
+import { AlertCircle, Check, Loader2, Sparkles, X } from '@/lib/icons';
 
 function MonacoFallbackEditor(props: EditorProps) {
   const value = typeof props.value === 'string' ? props.value : '';
@@ -174,13 +174,13 @@ export default function CodeEditor({
   };
 
   return (
-    <div className="h-full flex flex-col cm-editor border border-[var(--cm-border)] rounded-none">
-      <div className="h-8 px-3 border-b border-[var(--cm-border)] bg-[rgba(12,18,28,0.94)] flex items-center justify-between">
-        <div className="cm-mono text-[10px] uppercase tracking-[0.08em] text-[var(--cm-text-muted)]">{language}</div>
+    <div className="h-full flex flex-col bg-[#0d1117] border border-[#30363d] rounded-none">
+      <div className="h-8 px-3 border-b border-[#30363d] bg-[#0d1117] flex items-center justify-between">
+        <div className="cm-mono text-[10px] uppercase tracking-[0.08em] text-slate-500">{language}</div>
         <button
           onClick={handleSuggest}
           disabled={isLoading || readOnly || !code.trim()}
-          className="h-6 px-2.5 rounded-md text-[10px] font-semibold tracking-[0.06em] uppercase flex items-center gap-1 transition-all cm-btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+          className="h-6 px-2.5 rounded border border-[#3b82f6]/20 bg-[#3b82f6]/10 hover:bg-[#3b82f6]/20 text-[#58a6ff] text-[10px] font-semibold tracking-[0.06em] uppercase flex items-center gap-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isLoading ? (
             <>

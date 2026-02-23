@@ -1,7 +1,7 @@
 'use client';
 
 import { ReactNode } from 'react';
-import { X } from 'lucide-react';
+import { MoreHorizontal } from '@/lib/icons';
 
 interface SidebarProps {
   title: string;
@@ -18,19 +18,19 @@ export default function Sidebar({
 }: SidebarProps) {
   return (
     <aside
-      className="h-full cm-sidebar border-r border-[var(--cm-border)] flex flex-col shrink-0"
+      className="h-full border-r border-[#30363d] bg-[#010409] flex flex-col shrink-0"
       style={{ width: `${width}px` }}
     >
-      <div className="h-9 px-3 border-b border-[var(--cm-border)] flex items-center justify-between bg-[rgba(13,18,27,0.92)]">
-        <h2 className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--cm-text-muted)]">
+      <div className="h-10 px-4 border-b border-[#30363d] flex items-center justify-between bg-[#010409]">
+        <h2 className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">
           {title}
         </h2>
         <button
           onClick={onClose}
-          aria-label="Close sidebar"
-          className="h-6 w-6 rounded text-[var(--cm-text-muted)] hover:text-[var(--cm-text)] hover:bg-[rgba(129,150,189,0.12)] flex items-center justify-center transition-all"
+          aria-label="Sidebar options"
+          className="h-6 w-6 rounded text-slate-500 hover:text-slate-200 hover:bg-white/5 flex items-center justify-center transition-all"
         >
-          <X size={12} />
+          <MoreHorizontal size={14} />
         </button>
       </div>
 

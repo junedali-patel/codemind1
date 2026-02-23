@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  CircleUser,
   FileText,
   Search,
   GitBranch,
@@ -9,8 +10,7 @@ import {
   Network,
   Zap,
   Settings,
-  MoreHorizontal,
-} from 'lucide-react';
+} from '@/lib/icons';
 
 interface ActivityBarProps {
   activeView: string;
@@ -29,54 +29,42 @@ const activities = [
 
 export default function ActivityBar({ activeView, onViewChange }: ActivityBarProps) {
   return (
-    <aside className="w-12 cm-sidebar border-r border-[var(--cm-border)] flex flex-col items-center py-2 gap-2">
-      <div className="flex flex-col gap-1">
+    <aside className="w-12 border-r border-[#30363d] bg-[#010409] flex flex-col items-center py-4 gap-4 z-20">
+      <nav className="flex flex-col gap-4 items-center flex-1">
         {activities.map(({ id, icon: Icon, label }) => {
           const isActive = activeView === id;
           return (
-            <div key={id} className="relative group flex justify-center">
-              {isActive && (
-                <span className="absolute -left-[11px] top-1/2 -translate-y-1/2 h-6 w-[2px] rounded-r-full bg-[var(--cm-primary)] shadow-[0_0_12px_rgba(79,142,247,0.65)]" />
-              )}
-              <button
-                onClick={() => onViewChange(id)}
-                aria-label={label}
-                className={`h-9 w-9 rounded-md flex items-center justify-center transition-all duration-150 ${
-                  isActive
-                    ? 'bg-[rgba(79,142,247,0.16)] text-[var(--cm-text)]'
-                    : 'text-[var(--cm-text-muted)] hover:text-[var(--cm-text)] hover:bg-[rgba(129,150,189,0.12)]'
-                }`}
-              >
-                <Icon size={16} />
-              </button>
-              <div className="pointer-events-none absolute left-[120%] top-1/2 -translate-y-1/2 whitespace-nowrap rounded-md border border-[var(--cm-border)] bg-[var(--cm-surface-2)] px-2 py-1 text-[11px] text-[var(--cm-text)] opacity-0 shadow-lg transition-all group-hover:opacity-100 group-hover:translate-x-1">
-                {label}
-              </div>
-            </div>
+            <button
+              key={id}
+              onClick={() => onViewChange(id)}
+              aria-label={label}
+              className={`h-7 w-7 rounded flex items-center justify-center transition-colors ${
+                isActive ? 'text-[#58a6ff]' : 'text-slate-500 hover:text-[#f0f6fc]'
+              }`}
+            >
+              <Icon size={18} />
+            </button>
           );
         })}
-      </div>
+      </nav>
 
-      <div className="flex-1" />
-
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-4 items-center">
         <button
-          onClick={() => {}}
-          aria-label="More"
-          className="h-9 w-9 rounded-md flex items-center justify-center text-[var(--cm-text-muted)] hover:text-[var(--cm-text)] hover:bg-[rgba(129,150,189,0.12)] transition-all"
+          aria-label="Account"
+          className="h-7 w-7 rounded flex items-center justify-center text-slate-500 hover:text-[#f0f6fc] transition-colors"
         >
-          <MoreHorizontal size={16} />
+          <CircleUser size={18} />
         </button>
         <button
           onClick={() => onViewChange('settings')}
           aria-label="Settings"
-          className={`h-9 w-9 rounded-md flex items-center justify-center transition-all ${
+          className={`h-7 w-7 rounded flex items-center justify-center transition-colors ${
             activeView === 'settings'
-              ? 'bg-[rgba(79,142,247,0.16)] text-[var(--cm-text)]'
-              : 'text-[var(--cm-text-muted)] hover:text-[var(--cm-text)] hover:bg-[rgba(129,150,189,0.12)]'
+              ? 'text-[#58a6ff]'
+              : 'text-slate-500 hover:text-[#f0f6fc]'
           }`}
         >
-          <Settings size={16} />
+          <Settings size={18} />
         </button>
       </div>
     </aside>
