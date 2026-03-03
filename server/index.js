@@ -1,3 +1,6 @@
+// ADD these two imports at the very top of index.js
+const http = require("http");
+const { setupTerminalSocket } = require("./routes/terminal");
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
@@ -105,11 +108,20 @@ app.use((err, req, res, _next) => {
   });
   res.status(err.status || 500).json({
     error: "Internal Server Error",
-    message: process.env.NODE_ENV === "development" ? err.message : "Something went wrong",
+    message:
+      process.env.NODE_ENV === "development"
+        ? err.message
+        : "Something went wrong",
   });
 });
 
-app.listen(PORT, () => {
+// Replace app.listen() with this:
+const server = http.createServer(app);
+
+// Attach socket.io for terminal
+setupTerminalSocket(server);
+
+server.listen(PORT, () => {
   console.log(`Server listening on http://localhost:${PORT}`);
   console.log(`Frontend origin: ${FRONTEND_URL}`);
   console.log(`Terminal enabled: ${process.env.TERMINAL_ENABLED === "true" ? "yes" : "no"}`);

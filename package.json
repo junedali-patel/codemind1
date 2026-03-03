@@ -1,35 +1,31 @@
 {
-  "name": "codemind1",
+  "name": "codemind-desktop",
   "version": "1.0.0",
-  "description": "AI-Powered VS Code-like IDE with GitHub integration",
+  "main": "electron/main.js",
   "scripts": {
-    "client": "cd client && npm run dev",
-    "server": "cd server && npm start",
-    "install-all": "cd client && npm install && cd ../server && npm install",
-    "dev": "echo Run 'npm run server' in one terminal and 'npm run client' in another"
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\" \"wait-on http://localhost:3000 && electron .\"",
+    "dev:client": "cd client && npm run dev",
+    "dev:server": "cd server && node index.js",
+    "build:client": "cd client && npm run build",
+    "build": "npm run build:client && electron-builder",
+    "start": "electron ."
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/yourusername/codemind1"
-  },
-  "keywords": [
-    "ide",
-    "ai",
-    "vscode",
-    "code-editor",
-    "github"
-  ],
-  "author": "",
-  "license": "MIT",
-  "dependencies": {
-    "@monaco-editor/react": "^4.7.0",
-    "framer-motion": "^12.23.24",
-    "groq-sdk": "^0.37.0",
-    "lucide-react": "^0.552.0"
-  },
-  "devDependencies": {
-    "@types/node": "^24.9.2",
-    "@types/react": "^19.2.2",
-    "@types/react-dom": "^19.2.2"
+  "build": {
+    "appId": "com.codemindai.app",
+    "productName": "CodeMindAI",
+    "files": [
+      "electron/**/*",
+      "server/**/*",
+      "client/.next/**/*",
+      "client/public/**/*",
+      "client/package.json",
+      "node_modules/**/*"
+    ],
+    "extraResources": [
+      { "from": "server", "to": "server" }
+    ],
+    "win":   { "target": "nsis" },
+    "mac":   { "target": "dmg" },
+    "linux": { "target": "AppImage" }
   }
 }

@@ -1,4 +1,4 @@
-// File: /Users/junedalipatel/code/codemind1/client/app/workspace/[sessionId]/page.tsx
+// File: D:\Shravani\Mega Project Sem - VIII\codemind1\client\app\workspace\[sessionId]\page.tsx
 import * as entry from '../../../../../app/workspace/[sessionId]/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

@@ -12,6 +12,7 @@ import SearchView, { SearchMatch } from '../views/SearchView';
 import GitView, { GitStatusPayload } from '../views/GitView';
 import MindMapView from '../views/MindMapView';
 import SettingsView from '../views/SettingsView';
+import TerminalView from '../views/TerminalView';
 import ExtensionsView from '../views/ExtensionsView';
 
 export type SidebarView = 'explorer' | 'search' | 'git' | 'run' | 'mindmap' | 'extensions' | 'settings';
@@ -74,6 +75,7 @@ interface PanelContent {
 }
 
 interface IDELayoutProps {
+  workspaceSessionId?: string;
   children?: ReactNode;
   headerContent?: ReactNode;
   files?: FileNode[];
@@ -139,6 +141,7 @@ function clamp(value: number, min: number, max: number) {
 export default function IDELayout({
   children,
   headerContent,
+  workspaceSessionId,
   files = [],
   expandedDirs = {},
   onFileClick = () => {},
@@ -428,26 +431,36 @@ export default function IDELayout({
                   };
                 }}
               />
-              <div className="shrink-0" style={{ height: `${panelHeight}px` }}>
-                <Panel
-                  activeTab={panelState.activeTab}
-                  onTabChange={(tab) => setPanelState({ ...panelState, activeTab: tab })}
-                  onClose={() => setPanelState({ ...panelState, visible: false })}
-                  onToggleCollapse={() => setPanelState({ ...panelState, visible: false })}
-                  problems={panelContent?.problems}
-                  outputLines={panelContent?.outputLines}
-                  debugLines={panelContent?.debugLines}
-                  terminalLines={panelContent?.terminalLines}
-                  terminalConnected={panelContent?.terminalConnected}
-                  terminalInput={panelContent?.terminalInput}
-                  onTerminalInputChange={panelContent?.onTerminalInputChange}
-                  onTerminalSubmit={panelContent?.onTerminalSubmit}
-                  terminalTabs={panelContent?.terminalTabs}
-                  activeTerminalId={panelContent?.activeTerminalId}
-                  onTerminalTabSelect={panelContent?.onTerminalTabSelect}
-                  onTerminalCreate={panelContent?.onTerminalCreate}
-                  onTerminalClose={panelContent?.onTerminalClose}
-                />
+              <div className="shrink-0 flex flex-col" style={{ height: `${panelHeight}px` }}>
+  <Panel
+    activeTab={panelState.activeTab}
+    onTabChange={(tab) => setPanelState({ ...panelState, activeTab: tab })}
+    onClose={() => setPanelState({ ...panelState, visible: false })}
+    onToggleCollapse={() => setPanelState({ ...panelState, visible: false })}
+    problems={panelContent?.problems}
+    outputLines={panelContent?.outputLines}
+    debugLines={panelContent?.debugLines}
+    // Pass these as undefined — xterm handles terminal now
+    terminalLines={undefined}
+    terminalConnected={undefined}
+    terminalInput={undefined}
+    onTerminalInputChange={undefined}
+    onTerminalSubmit={undefined}
+    terminalTabs={panelContent?.terminalTabs}
+    activeTerminalId={panelContent?.activeTerminalId}
+    onTerminalTabSelect={panelContent?.onTerminalTabSelect}
+    onTerminalCreate={panelContent?.onTerminalCreate}
+    onTerminalClose={panelContent?.onTerminalClose}
+  />
+
+  {/* Real xterm.js terminal — only shown when terminal tab is active */}
+  {panelState.activeTab === 'terminal' && (
+    <div className="flex-1 min-h-0 overflow-hidden border-t border-[#30363d]">
+      <TerminalView
+        workspaceSessionId={workspaceSessionId}
+      />
+    </div>
+  )}
               </div>
             </>
           )}

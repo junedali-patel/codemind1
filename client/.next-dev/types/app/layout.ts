@@ -1,4 +1,4 @@
-// File: /Users/junedalipatel/code/codemind1/client/app/layout.tsx
+// File: D:\Shravani\Mega Project Sem - VIII\codemind1\client\app\layout.tsx
 import * as entry from '../../../app/layout.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

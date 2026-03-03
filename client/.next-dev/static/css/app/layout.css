@@ -1163,6 +1163,9 @@ button, input:where([type='button'], [type='reset'], [type='submit']), ::file-se
 .border-\[\#3b82f6\]\/30 {
   border-color: color-mix(in oklab, #3b82f6 30%, transparent);
 }
+.border-\[\#3e3e3e\] {
+  border-color: #3e3e3e;
+}
 .border-\[\#30363d\] {
   border-color: #30363d;
 }
@@ -1195,6 +1198,12 @@ button, input:where([type='button'], [type='reset'], [type='submit']), ::file-se
 }
 .bg-\[\#0d1117\]\/80 {
   background-color: color-mix(in oklab, #0d1117 80%, transparent);
+}
+.bg-\[\#1e1e1e\] {
+  background-color: #1e1e1e;
+}
+.bg-\[\#2d2d2d\] {
+  background-color: #2d2d2d;
 }
 .bg-\[\#3b82f6\] {
   background-color: #3b82f6;
@@ -1535,13 +1544,6 @@ button, input:where([type='button'], [type='reset'], [type='submit']), ::file-se
     }
   }
 }
-.group-hover\:text-\[\#58a6ff\] {
-  &:is(:where(.group):hover *) {
-    @media (hover: hover) {
-      color: #58a6ff;
-    }
-  }
-}
 .placeholder\:text-\[var\(--cm-text-muted\)\] {
   &::placeholder {
     color: var(--cm-text-muted);
@@ -1565,6 +1567,13 @@ button, input:where([type='button'], [type='reset'], [type='submit']), ::file-se
   &:hover {
     @media (hover: hover) {
       background-color: color-mix(in oklab, #3b82f6 20%, transparent);
+    }
+  }
+}
+.hover\:bg-\[\#3e3e3e\] {
+  &:hover {
+    @media (hover: hover) {
+      background-color: #3e3e3e;
     }
   }
 }
