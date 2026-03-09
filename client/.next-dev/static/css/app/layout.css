@@ -1151,6 +1151,12 @@ button, input:where([type='button'], [type='reset'], [type='submit']), ::file-se
   border-left-style: var(--tw-border-style);
   border-left-width: 1px;
 }
+.border-\(--cm-border\) {
+  border-color: var(--cm-border);
+}
+.border-\(--cm-border-soft\) {
+  border-color: var(--cm-border-soft);
+}
 .border-\[\#0d1117\] {
   border-color: #0d1117;
 }
@@ -1385,6 +1391,12 @@ button, input:where([type='button'], [type='reset'], [type='submit']), ::file-se
 }
 .whitespace-pre-wrap {
   white-space: pre-wrap;
+}
+.text-\(--cm-primary\) {
+  color: var(--cm-primary);
+}
+.text-\(--cm-text\) {
+  color: var(--cm-text);
 }
 .text-\[\#3b82f6\] {
   color: #3b82f6;
@@ -1624,6 +1636,11 @@ button, input:where([type='button'], [type='reset'], [type='submit']), ::file-se
     @media (hover: hover) {
       text-decoration-line: underline;
     }
+  }
+}
+.focus\:border-\(--cm-primary\) {
+  &:focus {
+    border-color: var(--cm-primary);
   }
 }
 .focus\:border-\[\#3b82f6\] {

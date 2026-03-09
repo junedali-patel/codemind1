@@ -1,5 +1,4 @@
 {
   "/page": "app/page.js",
-  "/workspace/[sessionId]/page": "app/workspace/[sessionId]/page.js",
-  "/repo/[owner]/[repo]/page": "app/repo/[owner]/[repo]/page.js"
+  "/workspace/[sessionId]/page": "app/workspace/[sessionId]/page.js"
 }

@@ -13,19 +13,63 @@
   "build": {
     "appId": "com.codemindai.app",
     "productName": "CodeMindAI",
+    "directories": {
+      "output": "dist"
+    },
     "files": [
       "electron/**/*",
       "server/**/*",
-      "client/.next/**/*",
-      "client/public/**/*",
-      "client/package.json",
-      "node_modules/**/*"
+      "client/out/**/*",
+      "node_modules/**/*",
+      "package.json"
     ],
-    "extraResources": [
-      { "from": "server", "to": "server" }
-    ],
-    "win":   { "target": "nsis" },
-    "mac":   { "target": "dmg" },
-    "linux": { "target": "AppImage" }
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.developer-tools"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.png",
+      "category": "Development"
+    }
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "electron": "^40.8.0",
+    "electron-builder": "^26.8.1",
+    "wait-on": "^9.0.4"
   }
 }

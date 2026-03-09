@@ -11,20 +11,28 @@ import "xterm/css/xterm.css";
 
 const SERVER_URL = process.env.NEXT_PUBLIC_SERVER_URL || "http://localhost:4000";
 
+
 interface TerminalViewProps {
   workspaceSessionId?: string;
   cwd?: string;
 }
 
 export default function TerminalView({ workspaceSessionId, cwd }: TerminalViewProps) {
+  
   const terminalDivRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const terminalIdRef = useRef<string | null>(null);
+  
 
   const [status, setStatus] = useState<"connecting" | "ready" | "error" | "exited">("connecting");
   const [errorMsg, setErrorMsg] = useState("");
+  const statusRef = useRef<"connecting" | "ready" | "error" | "exited">("connecting");
+
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
 
   // ── Create terminal session on backend ──────────────────────────────────
   const createSession = useCallback(async (): Promise<string | null> => {
@@ -124,11 +132,16 @@ export default function TerminalView({ workspaceSessionId, cwd }: TerminalViewPr
         setStatus("error");
       });
 
-      socket.on("disconnect", () => {
-        if (!disposed && status !== "exited") {
-          term.write("\r\n\x1b[31m[Disconnected from server]\x1b[0m\r\n");
-        }
-      });
+
+// Add this ref at the top of your component with other refs:
+
+
+// Then in the disconnect handler:
+socket.on("disconnect", () => {
+  if (!disposed && statusRef.current !== "exited") {
+    term.write("\r\n\x1b[31m[Disconnected from server]\x1b[0m\r\n");
+  }
+});
 
       // 4. xterm → backend input
       term.onData((data) => {
