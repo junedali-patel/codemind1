@@ -34,3 +34,7 @@ yarn-error.log*
 # Keep existing paths
 client/node_modules/
 server/.env
+.next
+.next-dev
+node_modules
+*.zip

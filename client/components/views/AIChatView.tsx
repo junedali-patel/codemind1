@@ -93,6 +93,7 @@ export default function AIChatView() {
   const [isLoading, setIsLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const synthesisRef = useRef<SpeechSynthesis | null>(null);
@@ -147,6 +148,16 @@ export default function AIChatView() {
           console.error('Speech recognition error:', event.error);
           setIsRecording(false);
           setIsListening(false);
+          // Show user-friendly error message
+          if (event.error === 'network') {
+            setErrorMsg('Network error: Please check your internet connection and try again.');
+          } else if (event.error === 'not-allowed') {
+            setErrorMsg('Microphone access denied. Please allow microphone access in your browser settings.');
+          } else if (event.error === 'no-speech') {
+            setErrorMsg('No speech detected. Please try speaking again.');
+          } else {
+            setErrorMsg('Speech recognition error: ' + event.error);
+          }
         };
 
         recognition.onend = () => {
@@ -295,8 +306,8 @@ export default function AIChatView() {
   /* -------------- UI + MARKDOWN FIXES -------------- */
   return (
     <div className="h-full flex flex-col cm-sidebar overflow-hidden">
-      <div className="h-10 px-3 border-b border-[var(--cm-border)] bg-[rgba(2,6,23,0.5)] flex items-center">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--cm-primary)]">
+      <div className="h-10 px-3 border-b border-(--cm-border) bg-[rgba(2,6,23,0.5)] flex items-center">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-(--cm-primary)">
           AI Assistant
         </span>
       </div>
@@ -308,7 +319,7 @@ export default function AIChatView() {
               className={`max-w-[82%] px-3 py-2 rounded-xl text-[13px] leading-[1.45] ${
                 m.role === 'user'
                   ? 'cm-btn-primary text-white'
-                  : 'bg-[rgba(148,163,184,0.12)] text-slate-100 border border-[var(--cm-border)]'
+                  : 'bg-[rgba(148,163,184,0.12)] text-slate-100 border border-(--cm-border)'
               }`}
             >
               <ReactMarkdown
@@ -332,7 +343,7 @@ export default function AIChatView() {
                             <Copy size={12} />
                           </button>
 
-                          <pre className="!m-0 !p-0 rounded-md overflow-hidden">
+                          <pre className="m-0! p-0! rounded-md overflow-hidden">
                             <SyntaxHighlighter
                               language={match?.[1] || "text"}
                               style={oneDark}
@@ -362,7 +373,7 @@ export default function AIChatView() {
 
         {isLoading && (
           <div className="flex justify-start">
-            <div className="max-w-[82%] px-3 py-2 rounded-xl text-[13px] leading-[1.45] bg-[rgba(148,163,184,0.12)] text-sky-300 border border-[var(--cm-border)] flex items-center gap-2">
+            <div className="max-w-[82%] px-3 py-2 rounded-xl text-[13px] leading-[1.45] bg-[rgba(148,163,184,0.12)] text-sky-300 border border-(--cm-border) flex items-center gap-2">
               <Loader size={14} className="animate-spin" /> Thinking...
             </div>
           </div>
@@ -371,7 +382,7 @@ export default function AIChatView() {
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="p-2.5 border-t border-[var(--cm-border)] bg-[rgba(2,6,23,0.55)]">
+      <div className="p-2.5 border-t border-(--cm-border) bg-[rgba(2,6,23,0.55)]">
         <div className="flex gap-2 items-center">
           <textarea
             value={input}
@@ -383,7 +394,7 @@ export default function AIChatView() {
               }
             }}
             placeholder="Ask me anything..."
-            className="flex-1 h-10 max-h-24 rounded-lg px-3 py-2 text-sm text-[var(--cm-text)] bg-[rgba(15,23,42,0.75)] border border-[var(--cm-border-soft)] focus:outline-none focus:border-[var(--cm-primary)]"
+            className="flex-1 h-10 max-h-24 rounded-lg px-3 py-2 text-sm text-(--cm-text) bg-[rgba(15,23,42,0.75)] border border-(--cm-border-soft) focus:outline-none focus:border-(--cm-primary)"
           />
 
           <button
@@ -392,7 +403,7 @@ export default function AIChatView() {
             className={`px-3 py-2 rounded transition-colors ${
               isRecording || isListening
                 ? 'bg-red-600 hover:bg-red-700 text-white animate-pulse'
-                : 'cm-btn-ghost text-[var(--cm-text)]'
+                : 'cm-btn-ghost text-(--cm-text)'
             }`}
             title={isRecording || isListening ? 'Stop recording' : 'Start voice input'}
           >
@@ -407,6 +418,11 @@ export default function AIChatView() {
             <Send size={16} />
           </button>
         </div>
+        {errorMsg && (
+          <div className="mt-2 text-sm text-red-500">
+            {errorMsg}
+          </div>
+        )}
       </div>
 
     </div>
