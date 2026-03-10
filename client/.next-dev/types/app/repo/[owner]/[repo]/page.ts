@@ -1,4 +1,4 @@
-// File: D:\Shravani\Mega Project Sem - VIII\codemind1\client\app\repo\[owner]\[repo]\page.tsx
+// File: F:\Mega Project\new-1\codemind1\client\app\repo\[owner]\[repo]\page.tsx
 import * as entry from '../../../../../../app/repo/[owner]/[repo]/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

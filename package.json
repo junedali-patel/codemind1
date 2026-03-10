@@ -22,10 +22,28 @@
       "node_modules/**/*"
     ],
     "extraResources": [
-      { "from": "server", "to": "server" }
+      {
+        "from": "server",
+        "to": "server"
+      }
     ],
-    "win":   { "target": "nsis" },
-    "mac":   { "target": "dmg" },
-    "linux": { "target": "AppImage" }
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "electron": "^40.6.1",
+    "electron-builder": "^26.8.1",
+    "wait-on": "^9.0.4"
+  },
+  "dependencies": {
+    "tree-kill": "^1.2.2"
   }
 }
