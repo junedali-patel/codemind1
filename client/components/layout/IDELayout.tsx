@@ -104,6 +104,7 @@ interface IDELayoutProps {
     terminalCount?: number;
     extensionHostStatus?: 'off' | 'running' | 'error';
   };
+  terminalCwd?: string;
   sidebarState?: SidebarState;
   onSidebarStateChange?: (state: SidebarState) => void;
   onSidebarResize?: (width: number) => void;
@@ -155,6 +156,7 @@ export default function IDELayout({
   selectedFileContent = null,
   analysisPanel,
   statusBarProps = {},
+  terminalCwd,
   sidebarState: sidebarStateProp,
   onSidebarStateChange,
   onSidebarResize,
@@ -451,16 +453,12 @@ export default function IDELayout({
     onTerminalTabSelect={panelContent?.onTerminalTabSelect}
     onTerminalCreate={panelContent?.onTerminalCreate}
     onTerminalClose={panelContent?.onTerminalClose}
+    terminalView={
+      panelState.activeTab === 'terminal' ? (
+        <TerminalView workspaceSessionId={workspaceSessionId} syncCwd={terminalCwd} />
+      ) : undefined
+    }
   />
-
-  {/* Real xterm.js terminal — only shown when terminal tab is active */}
-  {panelState.activeTab === 'terminal' && (
-    <div className="flex-1 min-h-0 overflow-hidden border-t border-[#30363d]">
-      <TerminalView
-        workspaceSessionId={workspaceSessionId}
-      />
-    </div>
-  )}
               </div>
             </>
           )}

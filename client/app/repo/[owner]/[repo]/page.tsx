@@ -170,6 +170,14 @@ function normalizePath(inputPath: string): string {
   return inputPath.replace(/\\/g, '/').replace(/^\/+/, '');
 }
 
+function getDirectoryPath(filePath: string): string {
+  const normalized = normalizePath(filePath || '');
+  const segments = normalized.split('/').filter(Boolean);
+  if (segments.length <= 1) return '';
+  segments.pop();
+  return segments.join('/');
+}
+
 function getExtension(filename: string): string {
   return filename.split('.').pop()?.toLowerCase() || '';
 }
@@ -478,6 +486,7 @@ export default function RepoPage() {
 
   const activeDocument = activeTabPath ? documents[activeTabPath] : undefined;
   const activeTerminalSession = activeTerminalId ? terminalSessions[activeTerminalId] : undefined;
+  const terminalCwd = useMemo(() => getDirectoryPath(activeTabPath), [activeTabPath]);
 
   const selectedFileNode = useMemo(() => {
     if (!activeTabPath) return null;
@@ -1038,7 +1047,7 @@ export default function RepoPage() {
         {
           method: 'POST',
           body: JSON.stringify({
-            text: `${command}\n`,
+            data: `${command}\n`,
           }),
         }
       );
@@ -2095,6 +2104,7 @@ export default function RepoPage() {
   return (
     <>
       <IDELayout
+        workspaceSessionId={workspaceSessionId}
         files={workspaceTree}
         expandedDirs={expandedDirs}
         onFileClick={(file) => {
@@ -2121,6 +2131,7 @@ export default function RepoPage() {
         onTabClose={closeTab}
         onGenerateVisualization={(node, type) => void handleGenerateVisualization(node, type)}
         selectedFileContent={activeDocument?.content || null}
+        terminalCwd={terminalCwd}
         sidebarState={sidebarState}
         onSidebarStateChange={setSidebarState}
         onSidebarResize={(width) =>

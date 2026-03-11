@@ -1,40 +1,96 @@
 const express = require("express");
-const router = express.Router();
 const os = require("os");
+const path = require("path");
 const { Server } = require("socket.io");
+const { getWorkspaceSessionById } = require("../state/runtime");
 
-// node-pty is a native module — must be rebuilt for Electron
+const router = express.Router();
+
+// node-pty is a native module. Rebuild if needed for Electron.
 // Run: npx electron-rebuild -f -w node-pty  (after Electron setup)
 let pty;
 try {
   pty = require("node-pty");
 } catch (e) {
-  console.warn("[Terminal] node-pty not available:", e.message);
+  try {
+    pty = require("@homebridge/node-pty-prebuilt-multiarch");
+  } catch (fallbackError) {
+    console.warn(
+      "[Terminal] node-pty not available:",
+      e.message,
+      "fallback failed:",
+      fallbackError.message
+    );
+  }
 }
 
-// Store active terminal sessions: terminalId → { ptyProcess, workspaceSessionId }
+// Store active terminal sessions: terminalId -> { ptyProcess, workspaceSessionId }
 const sessions = new Map();
 
-// ─── REST Routes ────────────────────────────────────────────────────────────
+function isTerminalEnabled() {
+  return process.env.TERMINAL_ENABLED === "true";
+}
+
+function requireTerminalEnabled(req, res, next) {
+  if (!isTerminalEnabled()) {
+    return res.status(503).json({
+      error: "Terminal disabled",
+      details: "Set TERMINAL_ENABLED=true on the server to enable terminals.",
+    });
+  }
+  return next();
+}
+
+function isPathInsideRoot(rootPath, targetPath) {
+  const relativePath = path.relative(rootPath, targetPath);
+  return (
+    relativePath === "" ||
+    (!relativePath.startsWith("..") && !path.isAbsolute(relativePath))
+  );
+}
+
+function resolveWorkspaceCwd(rootPath, cwd) {
+  if (!cwd) return rootPath;
+  const input = String(cwd || "").trim();
+  const candidate = path.isAbsolute(input)
+    ? path.resolve(input)
+    : path.resolve(rootPath, input);
+  if (!isPathInsideRoot(rootPath, candidate)) {
+    throw new Error("Requested cwd is outside the workspace root.");
+  }
+  return candidate;
+}
+
+// -------- REST Routes --------
 
 // POST /api/terminal/session
 // Create a new terminal session tied to a workspace
-router.post("/session", (req, res) => {
+router.post("/session", requireTerminalEnabled, (req, res) => {
   if (!pty) {
     return res.status(503).json({ error: "Terminal not available" });
   }
 
-  const { workspaceSessionId, cwd } = req.body;
-  const terminalId = `term_${Date.now()}_${Math.random()
-    .toString(36)
-    .slice(2, 7)}`;
+  const { workspaceSessionId, cwd } = req.body || {};
+  const terminalId = `term_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
   // Windows: use PowerShell; Unix: use bash
   const shell = os.platform() === "win32" ? "powershell.exe" : "bash";
   const shellArgs = os.platform() === "win32" ? [] : [];
 
-  // Use provided cwd or fallback to home directory
-  const workingDir = cwd || os.homedir();
+  let workingDir = os.homedir();
+  if (workspaceSessionId) {
+    const workspace = getWorkspaceSessionById(workspaceSessionId);
+    if (!workspace) {
+      return res.status(404).json({ error: "Workspace session not found" });
+    }
+    try {
+      workingDir = resolveWorkspaceCwd(workspace.rootPath, cwd);
+    } catch (error) {
+      return res.status(400).json({ error: error.message });
+    }
+  } else if (cwd) {
+    workingDir = path.resolve(String(cwd));
+  }
 
   try {
     const ptyProcess = pty.spawn(shell, shellArgs, {
@@ -52,6 +108,9 @@ router.post("/session", (req, res) => {
     sessions.set(terminalId, {
       ptyProcess,
       workspaceSessionId: workspaceSessionId || null,
+      name: `Terminal ${sessions.size + 1}`,
+      shell,
+      cwd: workingDir,
       createdAt: new Date().toISOString(),
     });
 
@@ -75,28 +134,36 @@ router.post("/session", (req, res) => {
 
 // GET /api/terminal/workspace/:workspaceSessionId
 // List all terminal sessions for a workspace
-router.get("/workspace/:workspaceSessionId", (req, res) => {
-  const { workspaceSessionId } = req.params;
-  const result = [];
+router.get(
+  "/workspace/:workspaceSessionId",
+  requireTerminalEnabled,
+  (req, res) => {
+    const { workspaceSessionId } = req.params;
+    const result = [];
 
-  sessions.forEach((session, terminalId) => {
-    if (session.workspaceSessionId === workspaceSessionId) {
-      result.push({
-        terminalId,
-        createdAt: session.createdAt,
-        workspaceSessionId,
-      });
-    }
-  });
+    sessions.forEach((session, terminalId) => {
+      if (session.workspaceSessionId === workspaceSessionId) {
+        result.push({
+          terminalId,
+          createdAt: session.createdAt,
+          name: session.name || terminalId,
+          shell: session.shell,
+          cwd: session.cwd,
+          isClosed: false,
+          workspaceSessionId,
+        });
+      }
+    });
 
-  res.json(result);
-});
+    res.json({ terminals: result });
+  }
+);
 
 // PATCH /api/terminal/:terminalId
 // Resize the terminal (cols/rows)
-router.patch("/:terminalId", (req, res) => {
+router.patch("/:terminalId", requireTerminalEnabled, (req, res) => {
   const { terminalId } = req.params;
-  const { cols, rows } = req.body;
+  const { cols, rows } = req.body || {};
   const session = sessions.get(terminalId);
 
   if (!session) {
@@ -105,8 +172,8 @@ router.patch("/:terminalId", (req, res) => {
 
   try {
     session.ptyProcess.resize(
-      Math.max(1, parseInt(cols) || 80),
-      Math.max(1, parseInt(rows) || 24)
+      Math.max(1, parseInt(cols, 10) || 80),
+      Math.max(1, parseInt(rows, 10) || 24)
     );
     res.json({ ok: true });
   } catch (err) {
@@ -115,23 +182,26 @@ router.patch("/:terminalId", (req, res) => {
 });
 
 // POST /api/terminal/:terminalId/input
-// Send input to terminal (REST fallback — socket.io is preferred)
-router.post("/:terminalId/input", (req, res) => {
+// Send input to terminal (REST fallback -- socket.io is preferred)
+router.post("/:terminalId/input", requireTerminalEnabled, (req, res) => {
   const { terminalId } = req.params;
-  const { data } = req.body;
+  const { data, text } = req.body || {};
   const session = sessions.get(terminalId);
 
   if (!session) {
     return res.status(404).json({ error: "Terminal session not found" });
   }
 
-  session.ptyProcess.write(data);
+  const input = typeof data === "string" ? data : typeof text === "string" ? text : "";
+  if (input) {
+    session.ptyProcess.write(input);
+  }
   res.json({ ok: true });
 });
 
 // GET /api/terminal/:terminalId/stream
-// SSE stream — used as fallback if socket.io is unavailable
-router.get("/:terminalId/stream", (req, res) => {
+// SSE stream -- used as fallback if socket.io is unavailable
+router.get("/:terminalId/stream", requireTerminalEnabled, (req, res) => {
   const { terminalId } = req.params;
   const session = sessions.get(terminalId);
 
@@ -145,20 +215,49 @@ router.get("/:terminalId/stream", (req, res) => {
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders();
 
+  const readyPayload = JSON.stringify({
+    type: "system",
+    data: "ready",
+    timestamp: new Date().toISOString(),
+  });
+  res.write(`event: ready\n`);
+  res.write(`data: ${readyPayload}\n\n`);
+
   const onData = (data) => {
-    res.write(`data: ${JSON.stringify({ output: data })}\n\n`);
+    res.write(
+      `data: ${JSON.stringify({
+        type: "stdout",
+        data,
+        timestamp: new Date().toISOString(),
+      })}\n\n`
+    );
   };
 
-  session.ptyProcess.onData(onData);
+  const dataDisposable = session.ptyProcess.onData(onData);
+  const exitDisposable = session.ptyProcess.onExit(({ exitCode }) => {
+    res.write(
+      `data: ${JSON.stringify({
+        type: "exit",
+        data: `Process exited with code ${exitCode}`,
+        timestamp: new Date().toISOString(),
+      })}\n\n`
+    );
+  });
 
   req.on("close", () => {
     console.log(`[Terminal] SSE stream closed: ${terminalId}`);
+    if (dataDisposable && typeof dataDisposable.dispose === "function") {
+      dataDisposable.dispose();
+    }
+    if (exitDisposable && typeof exitDisposable.dispose === "function") {
+      exitDisposable.dispose();
+    }
   });
 });
 
 // DELETE /api/terminal/:terminalId
 // Kill and remove a terminal session
-router.delete("/:terminalId", (req, res) => {
+router.delete("/:terminalId", requireTerminalEnabled, (req, res) => {
   const { terminalId } = req.params;
   const session = sessions.get(terminalId);
 
@@ -176,7 +275,7 @@ router.delete("/:terminalId", (req, res) => {
   }
 });
 
-// ─── Socket.io Setup ─────────────────────────────────────────────────────────
+// -------- Socket.io Setup --------
 
 function setupTerminalSocket(httpServer) {
   const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
@@ -193,6 +292,8 @@ function setupTerminalSocket(httpServer) {
   io.on("connection", (socket) => {
     console.log(`[Socket.io] Client connected: ${socket.id}`);
     let attachedTerminalId = null;
+    let dataDisposable = null;
+    let exitDisposable = null;
 
     // Client joins an existing terminal session
     socket.on("terminal:attach", (terminalId) => {
@@ -204,13 +305,20 @@ function setupTerminalSocket(httpServer) {
 
       attachedTerminalId = terminalId;
 
-      // Stream pty output → frontend
-      session.ptyProcess.onData((data) => {
+      if (dataDisposable && typeof dataDisposable.dispose === "function") {
+        dataDisposable.dispose();
+      }
+      if (exitDisposable && typeof exitDisposable.dispose === "function") {
+        exitDisposable.dispose();
+      }
+
+      // Stream pty output -> frontend
+      dataDisposable = session.ptyProcess.onData((data) => {
         socket.emit("terminal:output", data);
       });
 
       // Handle pty exit
-      session.ptyProcess.onExit(({ exitCode }) => {
+      exitDisposable = session.ptyProcess.onExit(({ exitCode }) => {
         socket.emit("terminal:exit", { exitCode });
         sessions.delete(terminalId);
       });
@@ -219,7 +327,7 @@ function setupTerminalSocket(httpServer) {
       console.log(`[Terminal] Socket ${socket.id} attached to ${terminalId}`);
     });
 
-    // Frontend → pty input
+    // Frontend -> pty input
     socket.on("terminal:input", (data) => {
       if (!attachedTerminalId) return;
       const session = sessions.get(attachedTerminalId);
@@ -240,6 +348,12 @@ function setupTerminalSocket(httpServer) {
 
     socket.on("disconnect", () => {
       console.log(`[Socket.io] Client disconnected: ${socket.id}`);
+      if (dataDisposable && typeof dataDisposable.dispose === "function") {
+        dataDisposable.dispose();
+      }
+      if (exitDisposable && typeof exitDisposable.dispose === "function") {
+        exitDisposable.dispose();
+      }
     });
   });
 

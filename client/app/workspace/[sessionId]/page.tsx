@@ -1,7 +1,7 @@
 "use client";
 import { useParams } from "next/navigation";
-import { useEffect, useState, useMemo, useCallback } from "react";
-import IDELayout from "@/components/layout/IDELayout";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
+import IDELayout, { PanelState } from "@/components/layout/IDELayout";
 import CodeEditor from "@/components/CodeEditor";
 import { FileNode } from "@/components/views/ExplorerView";
 import { EditorTab } from "@/components/layout/EditorTabs";
@@ -28,6 +28,14 @@ function findNodeById(nodes: FileNode[], nodeId: string): FileNode | null {
   return null;
 }
 
+function getDirectoryPath(filePath: string) {
+  const normalized = String(filePath || "").replace(/\\/g, "/");
+  const segments = normalized.split("/").filter(Boolean);
+  if (segments.length <= 1) return "";
+  segments.pop();
+  return segments.join("/");
+}
+
 export default function WorkspaceSessionPage() {
   const params = useParams();
   const sessionId = params?.sessionId as string;
@@ -41,6 +49,13 @@ export default function WorkspaceSessionPage() {
   const [error, setError] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisOutput, setAnalysisOutput] = useState("");
+  const [panelState, setPanelState] = useState<PanelState>({
+    visible: true,
+    activeTab: "problems",
+    height: 220,
+  });
+  const [openTopMenu, setOpenTopMenu] = useState<"file" | "view" | "terminal" | "help" | null>(null);
+  const topMenuContainerRef = useRef<HTMLDivElement | null>(null);
 
   const allFilePaths = useMemo(() => flattenFilePaths(workspaceTree), [workspaceTree]);
 
@@ -132,28 +147,149 @@ export default function WorkspaceSessionPage() {
   );
 
   const activeDocument = activeTabPath ? documents[activeTabPath] : undefined;
+  const terminalCwd = useMemo(() => getDirectoryPath(activeTabPath), [activeTabPath]);
   const selectedFileNode = useMemo(() => {
     if (!activeTabPath) return null;
     return findNodeById(workspaceTree, activeTabPath);
   }, [activeTabPath, workspaceTree]);
 
+  const topMenuSections = useMemo(() => [
+    {
+      id: "file",
+      label: "File",
+      actions: [],
+    },
+    {
+      id: "view",
+      label: "View",
+      actions: [
+        {
+          id: "view-toggle-panel",
+          label: panelState.visible ? "Hide Panel" : "Show Panel",
+          run: () => {
+            setPanelState((previous) => ({ ...previous, visible: !previous.visible }));
+          },
+        },
+      ],
+    },
+    {
+      id: "terminal",
+      label: "Terminal",
+      actions: [
+        {
+          id: "terminal-open",
+          label: "Open Terminal",
+          run: () => {
+            setPanelState((previous) => ({ ...previous, visible: true, activeTab: "terminal" }));
+          },
+        },
+      ],
+    },
+    {
+      id: "help",
+      label: "Help",
+      actions: [],
+    },
+  ], [panelState.visible]);
+
+  useEffect(() => {
+    if (!openTopMenu) return;
+
+    const onPointerDown = (event: MouseEvent) => {
+      if (!topMenuContainerRef.current) return;
+      if (!topMenuContainerRef.current.contains(event.target as Node)) {
+        setOpenTopMenu(null);
+      }
+    };
+
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpenTopMenu(null);
+      }
+    };
+
+    document.addEventListener("mousedown", onPointerDown);
+    window.addEventListener("keydown", onEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      window.removeEventListener("keydown", onEscape);
+    };
+  }, [openTopMenu]);
+
   const headerContent = (
     <header className="border-b border-[#30363d] bg-[#010409]">
+      <div className="h-9 px-4 border-b border-[#30363d] flex items-center justify-between gap-3">
+        <div ref={topMenuContainerRef} className="flex items-center gap-5">
+          <span className="text-[12px] font-semibold tracking-[0.14em] text-slate-300">CODEMIND.AI</span>
+          <div className="flex items-center gap-0.5">
+            {topMenuSections.map((section) => (
+              <div key={section.id} className="relative">
+                <button
+                  onClick={() =>
+                    setOpenTopMenu((previous) => (previous === section.id ? null : (section.id as "file" | "view" | "terminal" | "help")))
+                  }
+                  className={`h-7 px-2 rounded text-[12px] transition-colors ${
+                    openTopMenu === section.id
+                      ? "bg-white/10 text-slate-100"
+                      : "text-slate-400 hover:text-slate-100 hover:bg-white/5"
+                  }`}
+                >
+                  {section.label}
+                </button>
+
+                {openTopMenu === section.id && (
+                  <div className="absolute left-0 top-8 min-w-[230px] rounded-md border border-[#30363d] bg-[#0b111a] shadow-xl shadow-black/40 py-1 z-30">
+                    {section.actions.length === 0 ? (
+                      <div className="px-3 h-8 flex items-center text-[12px] text-slate-500">
+                        No actions yet
+                      </div>
+                    ) : (
+                      section.actions.map((action) => (
+                        <button
+                          key={action.id}
+                          onClick={() => {
+                            setOpenTopMenu(null);
+                            action.run();
+                          }}
+                          className="w-full px-3 h-8 flex items-center justify-between text-left text-[12px] text-slate-300 hover:bg-white/5"
+                        >
+                          <span>{action.label}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
       <div className="h-12 px-4 flex items-center justify-between gap-3">
         <span className="text-xs text-slate-500">Workspace: {sessionId}</span>
-        <button
-          onClick={analyzeWorkspace}
-          disabled={isAnalyzing || allFilePaths.length === 0}
-          className="h-8 px-3 rounded border border-[#3b82f6]/20 bg-[#3b82f6]/10 text-[#58a6ff] text-xs font-semibold flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#3b82f6]/20 transition-all"
-        >
-          {isAnalyzing ? "Analyzing..." : "Run AI Analysis"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setPanelState((previous) => ({ ...previous, visible: true, activeTab: "terminal" }))}
+            className="h-8 px-3 rounded border border-[#30363d] bg-white/5 text-slate-300 text-xs font-semibold hover:bg-white/10 transition-all"
+          >
+            Open Terminal
+          </button>
+          <button
+            onClick={analyzeWorkspace}
+            disabled={isAnalyzing || allFilePaths.length === 0}
+            className="h-8 px-3 rounded border border-[#3b82f6]/20 bg-[#3b82f6]/10 text-[#58a6ff] text-xs font-semibold flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#3b82f6]/20 transition-all"
+          >
+            {isAnalyzing ? "Analyzing..." : "Run AI Analysis"}
+          </button>
+        </div>
       </div>
     </header>
   );
 
   return (
     <IDELayout
+      workspaceSessionId={sessionId}
       files={workspaceTree}
       expandedDirs={expandedDirs}
       onFileClick={(file) => {
@@ -174,6 +310,9 @@ export default function WorkspaceSessionPage() {
       }}
       selectedFileContent={activeDocument?.content || null}
       headerContent={headerContent}
+      terminalCwd={terminalCwd}
+      panelState={panelState}
+      onPanelStateChange={setPanelState}
       analysisPanel={analysisOutput || isAnalyzing ? {
         content: analysisOutput,
         isAnalyzing,

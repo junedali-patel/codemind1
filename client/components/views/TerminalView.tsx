@@ -1,41 +1,77 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 
-// Install: npm install xterm xterm-addon-fit xterm-addon-web-links socket.io-client
 import { Terminal } from "xterm";
 import { FitAddon } from "xterm-addon-fit";
 import { WebLinksAddon } from "xterm-addon-web-links";
 import "xterm/css/xterm.css";
 
-const SERVER_URL = process.env.NEXT_PUBLIC_SERVER_URL || "http://localhost:4000";
-
+const SERVER_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  process.env.NEXT_PUBLIC_SERVER_URL ||
+  "http://localhost:4000";
 
 interface TerminalViewProps {
   workspaceSessionId?: string;
   cwd?: string;
+  syncCwd?: string;
 }
 
-export default function TerminalView({ workspaceSessionId, cwd }: TerminalViewProps) {
-  
+interface TerminalSessionPayload {
+  terminalId: string;
+  shell?: string;
+  cwd?: string;
+}
+
+function normalizeRelativeCwd(value?: string) {
+  if (!value) return "";
+  return String(value)
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "")
+    .replace(/\/+$/, "");
+}
+
+function joinWorkspacePath(rootPath: string, relativePath: string) {
+  if (!relativePath) return rootPath;
+  const separator = rootPath.includes("\\") ? "\\" : "/";
+  const cleaned = relativePath.replace(/[\\/]+/g, separator).replace(new RegExp(`^\\${separator}+`), "");
+  if (rootPath.endsWith(separator)) {
+    return `${rootPath}${cleaned}`;
+  }
+  return `${rootPath}${separator}${cleaned}`;
+}
+
+function buildCdCommand(shell: string | undefined, targetPath: string) {
+  const normalized = targetPath.replace(/"/g, '\\"');
+  const lowerShell = String(shell || "").toLowerCase();
+  if (lowerShell.includes("cmd.exe")) {
+    return `cd /d "${normalized}"\r`;
+  }
+  return `cd "${normalized}"\r`;
+}
+
+export default function TerminalView({ workspaceSessionId, cwd, syncCwd }: TerminalViewProps) {
   const terminalDivRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const terminalIdRef = useRef<string | null>(null);
-  
+  const workspaceRootRef = useRef<string | null>(null);
+  const lastSyncedCwdRef = useRef<string>("");
 
   const [status, setStatus] = useState<"connecting" | "ready" | "error" | "exited">("connecting");
   const [errorMsg, setErrorMsg] = useState("");
+  const [sessionInfo, setSessionInfo] = useState<{ shell?: string; cwd?: string } | null>(null);
+  const [sessionKey, setSessionKey] = useState(0);
   const statusRef = useRef<"connecting" | "ready" | "error" | "exited">("connecting");
 
   useEffect(() => {
     statusRef.current = status;
   }, [status]);
 
-  // ── Create terminal session on backend ──────────────────────────────────
-  const createSession = useCallback(async (): Promise<string | null> => {
+  const createSession = useCallback(async (): Promise<TerminalSessionPayload | null> => {
     try {
       const res = await fetch(`${SERVER_URL}/api/terminal/session`, {
         method: "POST",
@@ -43,26 +79,51 @@ export default function TerminalView({ workspaceSessionId, cwd }: TerminalViewPr
         body: JSON.stringify({ workspaceSessionId, cwd }),
       });
 
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      return data.terminalId;
+      if (!res.ok) {
+        let message = `HTTP ${res.status}`;
+        try {
+          const payload = await res.json();
+          message = payload.details || payload.error || payload.message || message;
+        } catch {
+          // ignore response parsing errors
+        }
+        throw new Error(message);
+      }
+      return (await res.json()) as TerminalSessionPayload;
     } catch (err) {
       console.error("[Terminal] Failed to create session:", err);
-      setErrorMsg("Failed to start terminal. Is the backend running?");
+      setErrorMsg(err instanceof Error ? err.message : "Failed to start terminal");
       setStatus("error");
       return null;
     }
   }, [workspaceSessionId, cwd]);
 
-  // ── Main setup ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (!terminalDivRef.current) return;
 
     let disposed = false;
+    let terminalId: string | null = null;
+    let socket: Socket | null = null;
+    let term: Terminal | null = null;
+    let fitAddon: FitAddon | null = null;
+    let resizeObserver: ResizeObserver | null = null;
+
+    const handleResize = () => {
+      if (fitAddon && term && socket) {
+        fitAddon.fit();
+        socket.emit("terminal:resize", {
+          cols: term.cols,
+          rows: term.rows,
+        });
+      }
+    };
+
+    setStatus("connecting");
+    setErrorMsg("");
+    setSessionInfo(null);
 
     const setup = async () => {
-      // 1. Create xterm instance
-      const term = new Terminal({
+      term = new Terminal({
         theme: {
           background: "#1e1e1e",
           foreground: "#d4d4d4",
@@ -86,8 +147,16 @@ export default function TerminalView({ workspaceSessionId, cwd }: TerminalViewPr
         allowTransparency: true,
       });
 
-      const fitAddon = new FitAddon();
-      const webLinksAddon = new WebLinksAddon();
+      fitAddon = new FitAddon();
+      const webLinksAddon = new WebLinksAddon((event, uri) => {
+        event.preventDefault();
+        const electronAPI = (window as any)?.electronAPI;
+        if (electronAPI?.openExternal) {
+          electronAPI.openExternal(uri);
+          return;
+        }
+        window.open(uri, "_blank", "noopener,noreferrer");
+      });
       term.loadAddon(fitAddon);
       term.loadAddon(webLinksAddon);
       term.open(terminalDivRef.current!);
@@ -96,20 +165,21 @@ export default function TerminalView({ workspaceSessionId, cwd }: TerminalViewPr
       termRef.current = term;
       fitAddonRef.current = fitAddon;
 
-      // 2. Create backend session
-      const terminalId = await createSession();
-      if (!terminalId || disposed) return;
+      const session = await createSession();
+      if (!session || disposed) return;
+      terminalId = session.terminalId;
       terminalIdRef.current = terminalId;
+      setSessionInfo({ shell: session.shell, cwd: session.cwd });
+      workspaceRootRef.current = session.cwd || null;
+      lastSyncedCwdRef.current = "";
 
-      // 3. Connect socket.io
-      const socket = io(SERVER_URL, {
+      socket = io(SERVER_URL, {
         path: "/socket.io",
         transports: ["websocket"],
       });
       socketRef.current = socket;
 
       socket.on("connect", () => {
-        // Attach to the terminal session
         socket.emit("terminal:attach", terminalId);
       });
 
@@ -117,13 +187,12 @@ export default function TerminalView({ workspaceSessionId, cwd }: TerminalViewPr
         if (!disposed) setStatus("ready");
       });
 
-      // Backend → xterm display
       socket.on("terminal:output", (data: string) => {
-        term.write(data);
+        term?.write(data);
       });
 
       socket.on("terminal:exit", ({ exitCode }: { exitCode: number }) => {
-        term.write(`\r\n\x1b[33m[Process exited with code ${exitCode}]\x1b[0m\r\n`);
+        term?.write(`\r\n\x1b[33m[Process exited with code ${exitCode}]\x1b[0m\r\n`);
         if (!disposed) setStatus("exited");
       });
 
@@ -132,79 +201,87 @@ export default function TerminalView({ workspaceSessionId, cwd }: TerminalViewPr
         setStatus("error");
       });
 
-
-// Add this ref at the top of your component with other refs:
-
-
-// Then in the disconnect handler:
-socket.on("disconnect", () => {
-  if (!disposed && statusRef.current !== "exited") {
-    term.write("\r\n\x1b[31m[Disconnected from server]\x1b[0m\r\n");
-  }
-});
-
-      // 4. xterm → backend input
-      term.onData((data) => {
-        socket.emit("terminal:input", data);
+      socket.on("disconnect", () => {
+        if (!disposed && statusRef.current !== "exited") {
+          term?.write("\r\n\x1b[31m[Disconnected from server]\x1b[0m\r\n");
+        }
       });
 
-      // 5. Resize handling
-      const handleResize = () => {
-        if (fitAddonRef.current && termRef.current) {
-          fitAddonRef.current.fit();
-          socket.emit("terminal:resize", {
-            cols: termRef.current.cols,
-            rows: termRef.current.rows,
-          });
-        }
-      };
+      term.onData((data) => {
+        socket?.emit("terminal:input", data);
+      });
 
-      const resizeObserver = new ResizeObserver(handleResize);
+      resizeObserver = new ResizeObserver(handleResize);
       if (terminalDivRef.current) {
         resizeObserver.observe(terminalDivRef.current);
       }
       window.addEventListener("resize", handleResize);
-
-      // Cleanup
-      return () => {
-        disposed = true;
-        resizeObserver.disconnect();
-        window.removeEventListener("resize", handleResize);
-      };
     };
 
-    const cleanupPromise = setup();
+    setup();
 
     return () => {
-      disposed = true;
-      cleanupPromise.then((cleanup) => cleanup?.());
+      const currentTerm = term;
+      const currentSocket = socket;
+      const currentTerminalId = terminalId;
 
-      // Kill backend session
-      if (terminalIdRef.current) {
-        fetch(`${SERVER_URL}/api/terminal/${terminalIdRef.current}`, {
+      disposed = true;
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
+      window.removeEventListener("resize", handleResize);
+
+      if (currentTerminalId) {
+        fetch(`${SERVER_URL}/api/terminal/${currentTerminalId}`, {
           method: "DELETE",
         }).catch(() => {});
       }
 
-      socketRef.current?.disconnect();
-      termRef.current?.dispose();
-    };
-  }, [createSession]);
+      currentSocket?.disconnect();
+      currentTerm?.dispose();
 
-  // ── New terminal button ──────────────────────────────────────────────────
+      if (termRef.current === currentTerm) termRef.current = null;
+      if (fitAddonRef.current === fitAddon) fitAddonRef.current = null;
+      if (socketRef.current === currentSocket) socketRef.current = null;
+      if (terminalIdRef.current === currentTerminalId) terminalIdRef.current = null;
+    };
+  }, [createSession, sessionKey]);
+
+  useEffect(() => {
+    const rootPath = workspaceRootRef.current;
+    if (!rootPath) return;
+    if (statusRef.current !== "ready") return;
+    const desiredRel = normalizeRelativeCwd(syncCwd);
+    if (desiredRel === lastSyncedCwdRef.current) return;
+
+    const targetPath = desiredRel ? joinWorkspacePath(rootPath, desiredRel) : rootPath;
+    const command = buildCdCommand(sessionInfo?.shell, targetPath);
+    socketRef.current?.emit("terminal:input", command);
+    lastSyncedCwdRef.current = desiredRel;
+    setSessionInfo((previous) => ({
+      shell: previous?.shell,
+      cwd: targetPath,
+    }));
+  }, [syncCwd, sessionInfo?.shell, status]);
+
   const handleRestart = () => {
-    termRef.current?.dispose();
-    socketRef.current?.disconnect();
-    setStatus("connecting");
-    setErrorMsg("");
+    setSessionKey((previous) => previous + 1);
   };
+
+  const shellLabel = sessionInfo?.shell
+    ? sessionInfo.shell.split(/[\\/]/).pop()
+    : "shell";
 
   return (
     <div className="flex flex-col h-full bg-[#1e1e1e]">
-      {/* Terminal toolbar */}
       <div className="flex items-center justify-between px-3 py-1 bg-[#2d2d2d] border-b border-[#3e3e3e]">
-        <div className="flex items-center gap-2 text-xs text-gray-400">
-          <span>bash</span>
+        <div className="flex items-center gap-2 text-xs text-gray-400 min-w-0">
+          <span className="truncate">{shellLabel}</span>
+          {sessionInfo?.cwd && (
+            <span className="text-gray-500 truncate" title={sessionInfo.cwd}>
+              {sessionInfo.cwd}
+            </span>
+          )}
           <span
             className={`w-2 h-2 rounded-full ${
               status === "ready"
@@ -237,15 +314,13 @@ socket.on("disconnect", () => {
         </div>
       </div>
 
-      {/* Error state */}
       {status === "error" && (
         <div className="flex items-center gap-2 px-4 py-3 bg-red-900/30 text-red-400 text-sm border-b border-red-800">
-          <span>⚠</span>
+          <span>!</span>
           <span>{errorMsg || "Terminal error"}</span>
         </div>
       )}
 
-      {/* xterm container */}
       <div
         ref={terminalDivRef}
         className="flex-1 p-2 overflow-hidden"

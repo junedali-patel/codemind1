@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useRef } from 'react';
+import { FormEvent, ReactNode, useEffect, useMemo, useRef } from 'react';
 import { Check, ChevronUp, TerminalSquare, X } from '@/lib/icons';
 
 export type PanelTab = 'problems' | 'output' | 'terminal' | 'debug';
@@ -20,6 +20,7 @@ interface PanelProps {
   onTabChange: (tab: PanelTab) => void;
   onClose?: () => void;
   onToggleCollapse?: () => void;
+  terminalView?: ReactNode;
   problems?: PanelProblem[];
   outputLines?: string[];
   debugLines?: string[];
@@ -57,6 +58,7 @@ export default function Panel({
   onTabChange,
   onClose = () => {},
   onToggleCollapse,
+  terminalView,
   problems = [],
   outputLines = [],
   debugLines = [],
@@ -80,10 +82,11 @@ export default function Panel({
 
   useEffect(() => {
     if (!scrollRef.current) return;
+    if (activeTab === 'terminal' && terminalView) return;
     if (activeTab === 'output' || activeTab === 'terminal' || activeTab === 'debug') {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [activeTab, outputLines, terminalLines, debugLines]);
+  }, [activeTab, outputLines, terminalLines, debugLines, terminalView]);
 
   const handleTerminalSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -130,7 +133,14 @@ export default function Panel({
         </div>
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 cm-mono text-[12px] text-slate-400">
+      <div
+        ref={scrollRef}
+        className={
+          activeTab === 'terminal' && terminalView
+            ? 'flex-1 overflow-hidden'
+            : 'flex-1 overflow-y-auto px-4 py-3 cm-mono text-[12px] text-slate-400'
+        }
+      >
         {activeTab === 'problems' && (
           <div className="space-y-2">
             {problems.length === 0 ? (
@@ -174,7 +184,11 @@ export default function Panel({
           </div>
         )}
 
-        {activeTab === 'terminal' && (
+        {activeTab === 'terminal' && terminalView && (
+          <div className="h-full min-h-0">{terminalView}</div>
+        )}
+
+        {activeTab === 'terminal' && !terminalView && (
           <div className="h-full flex flex-col gap-2">
             <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.08em] text-slate-500">
               <TerminalSquare size={12} />

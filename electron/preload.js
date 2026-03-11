@@ -12,4 +12,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // Terminal (you'll expand this in Phase 2)
   onTerminalData: (cb) => ipcRenderer.on("terminal-data", (_, d) => cb(d)),
   sendTerminalInput: (data) => ipcRenderer.send("terminal-input", data),
+
+  // External links
+  openExternal: (url) => ipcRenderer.invoke("open-external", url),
 });

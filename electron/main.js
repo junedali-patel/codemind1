@@ -1,5 +1,5 @@
 console.log("ELECTRON MAIN FILE:", __filename);
-const { app, BrowserWindow, shell, session } = require("electron");
+const { app, BrowserWindow, shell, session, ipcMain } = require("electron");
 const path = require("path");
 const { startBackend, stopBackend } = require("./server-runner");
 
@@ -7,6 +7,13 @@ app.commandLine.appendSwitch("enable-media-stream");
 
 const isDev = !app.isPackaged;
 let mainWindow;
+
+ipcMain.handle("open-external", (_event, url) => {
+  if (typeof url !== "string") return false;
+  if (!/^https?:\/\//i.test(url)) return false;
+  shell.openExternal(url);
+  return true;
+});
 
 async function createWindow() {
   await startBackend();

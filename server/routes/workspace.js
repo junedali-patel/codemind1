@@ -21,7 +21,14 @@ const {
 
 const router = express.Router();
 
-const WORKSPACE_BASE_DIR = path.join(os.tmpdir(), "codemind-workspaces");
+const DEFAULT_WORKSPACE_BASE_DIR = path.join(os.homedir(), "CodeMind", "workspaces");
+const WORKSPACE_BASE_DIR = (() => {
+  const configured = String(process.env.WORKSPACE_BASE_DIR || "").trim();
+  if (configured) {
+    return path.resolve(configured);
+  }
+  return DEFAULT_WORKSPACE_BASE_DIR;
+})();
 const IGNORED_DIRS = new Set([".git", "node_modules", ".next", "dist", "build"]);
 const MAX_TREE_DEPTH_DEFAULT = 8;
 const MAX_SEARCH_RESULTS = 200;
